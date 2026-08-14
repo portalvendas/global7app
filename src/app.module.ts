@@ -9,6 +9,8 @@ import { UsersModule } from './modules/users/users.module';
 import { CompaniesModule } from './modules/companies/companies.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { DailyProductionModule } from './modules/daily-production/daily-production.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -20,6 +22,8 @@ import { HealthModule } from './modules/health/health.module';
     CompaniesModule,
     TeamsModule,
     ProjectsModule,
+    StorageModule,
+    DailyProductionModule,
     HealthModule,
   ],
   providers: [

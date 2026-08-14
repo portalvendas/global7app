@@ -278,10 +278,15 @@ model Attachment {
   dailyProductionId String         @map("daily_production_id")
   type              AttachmentType
 
-  // Original no Google Drive; thumbnail leve servido rápido pelo backend.
+  // Storage do original: chave no backend atual (LocalDisk agora; Google Drive/R2
+  // na fase 3, atrás da mesma StorageService). driveFileId fica reservado p/ o QBO/Drive.
+  storageKey      String?      @map("storage_key")
   driveFileId     String?      @map("drive_file_id")
   driveWebViewLink String?     @map("drive_web_view_link")
   thumbnailRef    String?      @map("thumbnail_ref")
+  // Thumbnail leve (WebP) guardado no Postgres p/ preview instantâneo no app,
+  // independente de onde o original vive.
+  thumbnailData   Bytes?       @map("thumbnail_data")
   mimeType        String?      @map("mime_type")
   sizeBytes       Int?         @map("size_bytes")
   uploadStatus    UploadStatus @default(PENDING) @map("upload_status")
