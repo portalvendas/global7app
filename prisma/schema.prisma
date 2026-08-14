@@ -1,0 +1,301 @@
+// Global 7 — App Operacional. Schema Fases 0-1 (todas as tabelas já criadas;
+// módulos de invoices/bills/daily entram nas fases seguintes).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────
+enum CompanyType {
+  OPERATOR      // Global 7 (única)
+  SUBCONTRACTOR // subcontratadas
+  CLIENT        // contratantes
+}
+
+enum UserRole {
+  GLOBAL7_ADMIN
+  GLOBAL7_STAFF
+  SUBCONTRACTOR_ADMIN
+  TEAM_MEMBER
+  CLIENT_VIEWER
+}
+
+enum DailyStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+}
+
+enum BillStatus {
+  SUBMITTED
+  APPROVED
+  PAID
+}
+
+enum AttachmentType {
+  PRODUCTION_PHOTO
+  MAP_PHOTO
+}
+
+enum UploadStatus {
+  PENDING
+  STORED
+  FAILED
+}
+
+// Encaixe futuro do QuickBooks (não usado agora).
+enum SyncStatus {
+  NOT_SYNCED
+  PENDING
+  SYNCED
+  ERROR
+}
+
+// ─── Empresas e usuários ─────────────────────────────────────
+model Company {
+  id        String      @id @default(cuid())
+  type      CompanyType
+  name      String
+  legalName String?     @map("legal_name")
+  taxId     String?     @map("tax_id")
+  email     String?
+  phone     String?
+  isActive  Boolean     @default(true) @map("is_active")
+
+  // Encaixe QBO (futuro): Vendor (subcontratada) / Customer (cliente).
+  externalRef String?    @map("external_ref")
+  syncStatus  SyncStatus @default(NOT_SYNCED) @map("sync_status")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  users           User[]
+  teams           Team[]    @relation("SubcontractorTeams")
+  clientProjects  Project[] @relation("ClientProjects")
+  subProjects     Project[] @relation("SubcontractorProjects")
+  invoices        Invoice[] // como cliente
+  bills           Bill[]    // como subcontratada
+
+  @@index([type])
+  @@map("companies")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  companyId       String    @map("company_id")
+  role            UserRole
+  name            String
+  email           String    @unique
+  password        String
+  avatarUrl       String?   @map("avatar_url")
+  isActive        Boolean   @default(true) @map("is_active")
+  refreshTokenHash String?  @map("refresh_token_hash")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships     TeamMembership[]
+  dailiesAuthored DailyProduction[]  @relation("DailyAuthor")
+  dailiesReviewed DailyProduction[]  @relation("DailyReviewer")
+  billsSubmitted  Bill[]             @relation("BillSubmittedBy")
+  billsApproved   Bill[]             @relation("BillApprovedBy")
+
+  @@index([companyId])
+  @@map("users")
+}
+
+// ─── Equipes ─────────────────────────────────────────────────
+model Team {
+  id                     String  @id @default(cuid())
+  subcontractorCompanyId String  @map("subcontractor_company_id")
+  name                   String
+  isActive               Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company     Company           @relation("SubcontractorTeams", fields: [subcontractorCompanyId], references: [id], onDelete: Cascade)
+  memberships TeamMembership[]
+  projects    Project[]
+  dailies     DailyProduction[]
+
+  @@index([subcontractorCompanyId])
+  @@map("teams")
+}
+
+model TeamMembership {
+  id        String   @id @default(cuid())
+  teamId    String   @map("team_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_memberships")
+}
+
+// ─── Projetos ────────────────────────────────────────────────
+model Project {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  description   String
+  contractValue Decimal  @default(0) @map("contract_value") @db.Decimal(14, 2)
+  currency      String   @default("USD") @db.VarChar(3)
+  status        String   @default("ACTIVE")
+
+  clientCompanyId        String  @map("client_company_id")
+  subcontractorCompanyId String? @map("subcontractor_company_id")
+  teamId                 String? @map("team_id")
+
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  client        Company           @relation("ClientProjects", fields: [clientCompanyId], references: [id])
+  subcontractor Company?          @relation("SubcontractorProjects", fields: [subcontractorCompanyId], references: [id])
+  team          Team?             @relation(fields: [teamId], references: [id])
+  invoices      Invoice[]
+  bills         Bill[]
+  dailies       DailyProduction[]
+
+  @@index([clientCompanyId])
+  @@index([subcontractorCompanyId])
+  @@map("projects")
+}
+
+// ─── Financeiro (fase 4; tabelas já criadas) ─────────────────
+model Invoice {
+  id              String        @id @default(cuid())
+  projectId       String        @map("project_id")
+  clientCompanyId String        @map("client_company_id")
+  number          String?
+  amount          Decimal       @db.Decimal(14, 2)
+  currency        String        @default("USD") @db.VarChar(3)
+  status          InvoiceStatus @default(DRAFT)
+  issueDate       DateTime?     @map("issue_date")
+  dueDate         DateTime?     @map("due_date")
+  paidAt          DateTime?     @map("paid_at")
+
+  externalRef String?    @map("external_ref")
+  syncStatus  SyncStatus @default(NOT_SYNCED) @map("sync_status")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  client  Company @relation(fields: [clientCompanyId], references: [id])
+
+  @@index([projectId])
+  @@index([clientCompanyId])
+  @@map("invoices")
+}
+
+model Bill {
+  id                     String     @id @default(cuid())
+  projectId              String?    @map("project_id")
+  teamId                 String?    @map("team_id")
+  subcontractorCompanyId String     @map("subcontractor_company_id")
+  number                 String?
+  amount                 Decimal    @db.Decimal(14, 2)
+  currency               String     @default("USD") @db.VarChar(3)
+  status                 BillStatus @default(SUBMITTED)
+  description            String?
+  dueDate                DateTime?  @map("due_date")
+  paidAt                 DateTime?  @map("paid_at")
+
+  submittedByUserId String? @map("submitted_by_user_id")
+  approvedByUserId  String? @map("approved_by_user_id")
+
+  externalRef String?    @map("external_ref")
+  syncStatus  SyncStatus @default(NOT_SYNCED) @map("sync_status")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project       Project? @relation(fields: [projectId], references: [id])
+  subcontractor Company  @relation(fields: [subcontractorCompanyId], references: [id])
+  submittedBy   User?    @relation("BillSubmittedBy", fields: [submittedByUserId], references: [id])
+  approvedBy    User?    @relation("BillApprovedBy", fields: [approvedByUserId], references: [id])
+
+  @@index([subcontractorCompanyId])
+  @@index([projectId])
+  @@map("bills")
+}
+
+// ─── Daily Production (fases 2-3; tabelas já criadas) ─────────
+model DailyProduction {
+  id             String      @id @default(cuid())
+  clientUuid     String      @unique @map("client_uuid") // gerado no celular (idempotência)
+  projectId      String      @map("project_id")
+  teamId         String      @map("team_id")
+  authorUserId   String      @map("author_user_id")
+  productionDate DateTime    @map("production_date") @db.Date
+  description    String
+  status         DailyStatus @default(DRAFT)
+
+  rejectionReason  String?   @map("rejection_reason")
+  reviewedByUserId String?   @map("reviewed_by_user_id")
+  reviewedAt       DateTime? @map("reviewed_at")
+
+  gpsLat Float? @map("gps_lat")
+  gpsLng Float? @map("gps_lng")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project     Project      @relation(fields: [projectId], references: [id])
+  team        Team         @relation(fields: [teamId], references: [id])
+  author      User         @relation("DailyAuthor", fields: [authorUserId], references: [id])
+  reviewedBy  User?        @relation("DailyReviewer", fields: [reviewedByUserId], references: [id])
+  attachments Attachment[]
+
+  @@index([projectId, productionDate])
+  @@index([teamId, productionDate])
+  @@index([status])
+  @@map("daily_productions")
+}
+
+model Attachment {
+  id                String         @id @default(cuid())
+  dailyProductionId String         @map("daily_production_id")
+  type              AttachmentType
+
+  // Original no Google Drive; thumbnail leve servido rápido pelo backend.
+  driveFileId     String?      @map("drive_file_id")
+  driveWebViewLink String?     @map("drive_web_view_link")
+  thumbnailRef    String?      @map("thumbnail_ref")
+  mimeType        String?      @map("mime_type")
+  sizeBytes       Int?         @map("size_bytes")
+  uploadStatus    UploadStatus @default(PENDING) @map("upload_status")
+
+  // Carimbo de auditoria de campo.
+  gpsLat     Float?    @map("gps_lat")
+  gpsLng     Float?    @map("gps_lng")
+  capturedAt DateTime? @map("captured_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  daily DailyProduction @relation(fields: [dailyProductionId], references: [id], onDelete: Cascade)
+
+  @@index([dailyProductionId])
+  @@map("attachments")
+}
