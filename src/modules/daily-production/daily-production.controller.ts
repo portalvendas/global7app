@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Query,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -64,6 +65,16 @@ export class DailyProductionController {
   @Post(':id/reject')
   reject(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: RejectDailyDto) {
     return this.service.reject(user, id, dto.reason);
+  }
+
+  @Get(':id/attachments/:attachmentId/original')
+  async original(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+  ): Promise<StreamableFile> {
+    const { buffer, mimeType } = await this.service.getAttachmentOriginal(user, id, attachmentId);
+    return new StreamableFile(buffer, { type: mimeType });
   }
 
   @Roles(...FIELD_ROLES)

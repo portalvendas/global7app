@@ -2,6 +2,9 @@ export const STORAGE_SERVICE = Symbol('STORAGE_SERVICE');
 
 export interface SavedObject {
   key: string;
+  /** Preenchidos quando o backend é o Google Drive (auditoria/link direto). */
+  driveFileId?: string;
+  webViewLink?: string;
 }
 
 /**

@@ -218,6 +218,8 @@ export class DailyProductionService {
         dailyProductionId: daily.id,
         type: dto.type as AttachmentType,
         storageKey: saved.key,
+        driveFileId: saved.driveFileId,
+        driveWebViewLink: saved.webViewLink,
         thumbnailData: new Uint8Array(thumbnail),
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -261,8 +263,25 @@ export class DailyProductionService {
     if (!membership) throw new ForbiddenException('Você não é membro desta equipe');
   }
 
+  /**
+   * Baixa o ORIGINAL de um anexo (via StorageService), respeitando escopo/papel.
+   * Serve tanto LocalDisk quanto Drive — o front chama autenticado sob demanda.
+   */
+  async getAttachmentOriginal(user: AuthUser, dailyId: string, attachmentId: string) {
+    await this.getScopedOrThrow(user, dailyId); // valida acesso ao daily (tenant/papel)
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachmentId, dailyProductionId: dailyId },
+    });
+    if (!attachment || !attachment.storageKey) {
+      throw new NotFoundException('Anexo não encontrado');
+    }
+    const buffer = await this.storage.read(attachment.storageKey);
+    return { buffer, mimeType: attachment.mimeType || 'application/octet-stream' };
+  }
+
   private serializeAttachment(a: {
     id: string;
+    dailyProductionId: string;
     type: AttachmentType;
     mimeType: string | null;
     sizeBytes: number | null;
@@ -271,6 +290,8 @@ export class DailyProductionService {
     gpsLng: number | null;
     capturedAt: Date | null;
     createdAt: Date;
+    storageKey: string | null;
+    driveWebViewLink: string | null;
     thumbnailData: Uint8Array | null;
   }) {
     return {
@@ -287,6 +308,12 @@ export class DailyProductionService {
       thumbnailUrl: a.thumbnailData
         ? `data:image/webp;base64,${Buffer.from(a.thumbnailData).toString('base64')}`
         : null,
+      // caminho (relativo à api) p/ baixar o original autenticado, quando existir.
+      originalPath: a.storageKey
+        ? `/daily-production/${a.dailyProductionId}/attachments/${a.id}/original`
+        : null,
+      // link direto no Drive (útil só p/ a Global 7, dona do Drive).
+      driveWebViewLink: a.driveWebViewLink ?? null,
     };
   }
 }
