@@ -1,0 +1,13 @@
+{
+  "name": "Global 7 — Daily Production",
+  "short_name": "Global 7",
+  "description": "Lançamento diário de produção em campo",
+  "start_url": "/dailies",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
