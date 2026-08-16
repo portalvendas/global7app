@@ -2,7 +2,7 @@
 
 import { clearTokens, getAccess, getRefresh, setTokens } from './auth';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'https://global7app.onrender.com';
+const BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {

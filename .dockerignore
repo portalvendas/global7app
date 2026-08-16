@@ -1,6 +1,8 @@
 node_modules
+web/node_modules
+web/.next
+web/out
 dist
 .git
 .env
 *.log
-web

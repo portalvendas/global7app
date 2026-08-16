@@ -1,11 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 
-interface Attachment { id: string; type: string; thumbnailUrl: string | null; uploadStatus: string; gpsLat?: number; gpsLng?: number }
+interface Attachment { id: string; type: string; thumbnailUrl: string | null; uploadStatus: string }
 interface Daily {
   id: string; status: string; productionDate: string; description: string; rejectionReason?: string | null;
   gpsLat?: number | null; gpsLng?: number | null;
@@ -15,21 +15,17 @@ interface Daily {
 }
 interface Me { id: string; role: string }
 
-export default function DailyDetailPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const id = params.id;
+function DetailInner() {
+  const id = useSearchParams().get('id') || '';
   const [d, setD] = useState<Daily | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try {
-      setD(await api<Daily>(`/daily-production/${id}`));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro');
-    }
+    if (!id) { setError('Daily não informado'); return; }
+    try { setD(await api<Daily>(`/daily-production/${id}`)); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Erro'); }
   }, [id]);
 
   useEffect(() => { api<Me>('/users/me').then(setMe).catch(() => {}); }, []);
@@ -43,12 +39,9 @@ export default function DailyDetailPage() {
       body = { reason };
     }
     setBusy(true); setError('');
-    try {
-      await api(`/daily-production/${id}/${action}`, { method: 'POST', body });
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha');
-    } finally { setBusy(false); }
+    try { await api(`/daily-production/${id}/${action}`, { method: 'POST', body }); await load(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Falha'); }
+    finally { setBusy(false); }
   }
 
   async function addPhoto(e: React.ChangeEvent<HTMLInputElement>, type: string) {
@@ -61,9 +54,8 @@ export default function DailyDetailPage() {
       form.append('capturedAt', new Date().toISOString());
       await api(`/daily-production/${id}/attachments`, { method: 'POST', body: form, isForm: true });
       await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha no upload');
-    } finally { setBusy(false); }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Falha no upload'); }
+    finally { setBusy(false); }
   }
 
   if (error && !d) return <div className="container"><div className="error">{error}</div><Link href="/dailies">Voltar</Link></div>;
@@ -133,5 +125,13 @@ export default function DailyDetailPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function DailyDetailPage() {
+  return (
+    <Suspense fallback={<div className="center">Carregando…</div>}>
+      <DetailInner />
+    </Suspense>
   );
 }

@@ -120,7 +120,7 @@ export default function DailiesPage() {
         ) : (
           rows.map((r) => (
             <div key={r.id} className="card">
-              <Link href={`/dailies/${r.id}`} style={{ display: 'block', color: 'inherit' }}>
+              <Link href={`/dailies/detail?id=${r.id}`} style={{ display: 'block', color: 'inherit' }}>
                 <div className="row between">
                   <h3>{r.project?.code || 'Projeto'} · {new Date(r.productionDate).toLocaleDateString('pt-BR')}</h3>
                   <span className={`badge ${r.status}`}>{r.status}</span>
