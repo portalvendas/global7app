@@ -11,6 +11,9 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { DailyProductionModule } from './modules/daily-production/daily-production.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
+import { BillsModule } from './modules/bills/bills.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -24,6 +27,9 @@ import { HealthModule } from './modules/health/health.module';
     ProjectsModule,
     StorageModule,
     DailyProductionModule,
+    InvoicesModule,
+    BillsModule,
+    DashboardModule,
     HealthModule,
   ],
   providers: [
