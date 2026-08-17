@@ -11,6 +11,10 @@ interface Invoice { id: string; number?: string | null; amount: string | number;
 interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null }
 interface Project { id: string; code: string }
 interface Company { id: string; name: string; type: string }
+interface ParsedDoc { amount: number | null; number: string | null; issueDate: string | null; dueDate: string | null; projectCode: string | null; description: string | null; note: string }
+
+const ACCEPT_DOC = 'application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+function normCode(s?: string | null) { return (s || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
 export default function FinanceiroPage() {
   const { me, loading } = useMe();
@@ -24,6 +28,8 @@ export default function FinanceiroPage() {
   const [busy, setBusy] = useState(false);
   const [inv, setInv] = useState({ projectId: '', amount: '', number: '', issueDate: '', dueDate: '' });
   const [bill, setBill] = useState({ amount: '', projectId: '', description: '', number: '', dueDate: '', subcontractorCompanyId: '' });
+  const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState('');
 
   const g7 = me ? isG7(me.role) : false;
   const isClient = me?.company.type === 'CLIENT';
@@ -41,6 +47,53 @@ export default function FinanceiroPage() {
     api<{ items: Project[] }>('/projects?pageSize=100').then((r) => setProjects(r.items)).catch(() => {});
     if (g7) api<{ items: Company[] }>('/companies?pageSize=100').then((r) => setCompanies(r.items)).catch(() => {});
   }, [me, load, g7, isClient, isSub]);
+
+  function matchProjectId(code?: string | null): string {
+    const n = normCode(code);
+    if (!n) return '';
+    const hit = projects.find((p) => { const pc = normCode(p.code); return pc && (pc === n || pc.includes(n) || n.includes(pc)); });
+    return hit ? hit.id : '';
+  }
+
+  function importFeedback(r: ParsedDoc, matchedId: string): string {
+    if (matchedId) return `${r.note} Projeto vinculado automaticamente.`;
+    if (r.projectCode) return `${r.note} Projeto "${r.projectCode}" não encontrado — selecione manualmente (obrigatório).`;
+    return `${r.note} Vincule o projeto manualmente (obrigatório).`;
+  }
+
+  async function importDoc(kind: 'invoice' | 'bill', e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    setImporting(true); setImportNote('Lendo o arquivo…'); setError('');
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      const url = kind === 'invoice' ? '/invoices/parse' : '/bills/parse';
+      const r = await api<ParsedDoc>(url, { method: 'POST', body: fd, isForm: true });
+      const pid = matchProjectId(r.projectCode);
+      if (kind === 'invoice') {
+        setInv((p) => ({
+          ...p,
+          amount: r.amount != null ? String(r.amount) : p.amount,
+          number: r.number || p.number,
+          issueDate: r.issueDate || p.issueDate,
+          dueDate: r.dueDate || p.dueDate,
+          projectId: pid || p.projectId,
+        }));
+      } else {
+        setBill((p) => ({
+          ...p,
+          amount: r.amount != null ? String(r.amount) : p.amount,
+          number: r.number || p.number,
+          dueDate: r.dueDate || p.dueDate,
+          description: r.description || p.description,
+          projectId: pid || p.projectId,
+        }));
+      }
+      setImportNote(importFeedback(r, pid));
+    } catch (err) {
+      setImportNote(''); setError(err instanceof ApiError ? err.message : 'Falha ao ler o arquivo');
+    } finally { setImporting(false); }
+  }
 
   async function act(url: string) {
     setBusy(true); setError('');
@@ -65,6 +118,7 @@ export default function FinanceiroPage() {
 
   async function createBill() {
     if (!bill.amount) return setError('Informe o valor');
+    if (!bill.projectId) return setError('Vincule um projeto (obrigatório)');
     if (g7 && !bill.subcontractorCompanyId) return setError('Selecione a subcontratada');
     setBusy(true); setError('');
     try {
@@ -91,13 +145,13 @@ export default function FinanceiroPage() {
         <div className="row between">
           <h2 style={{ margin: '4px 0' }}>Invoices &amp; Payroll</h2>
           {((tab === 'receber' && g7) || (tab === 'pagar' && (g7 || isSub))) && (
-            <button className="btn small" onClick={() => { setShowForm(!showForm); setError(''); }}>+ Novo</button>
+            <button className="btn small" onClick={() => { setShowForm(!showForm); setError(''); setImportNote(''); }}>+ Novo</button>
           )}
         </div>
 
         <div className="tabs">
-          {showReceber && <button className={`tab ${tab === 'receber' ? 'active' : ''}`} onClick={() => { setTab('receber'); setShowForm(false); }}>Invoices</button>}
-          {showPagar && <button className={`tab ${tab === 'pagar' ? 'active' : ''}`} onClick={() => { setTab('pagar'); setShowForm(false); }}>Payroll</button>}
+          {showReceber && <button className={`tab ${tab === 'receber' ? 'active' : ''}`} onClick={() => { setTab('receber'); setShowForm(false); setImportNote(''); }}>Invoices</button>}
+          {showPagar && <button className={`tab ${tab === 'pagar' ? 'active' : ''}`} onClick={() => { setTab('pagar'); setShowForm(false); setImportNote(''); }}>Payroll</button>}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -106,7 +160,17 @@ export default function FinanceiroPage() {
         {showForm && tab === 'receber' && g7 && (
           <div className="card">
             <h3>Novo invoice</h3>
-            <label>Projeto</label>
+            <div className="card" style={{ background: 'var(--panel2)', padding: 12 }}>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="muted">Importar de arquivo (PDF ou Excel):</span>
+                <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer', margin: 0 }}>
+                  {importing ? 'Lendo…' : '📎 Anexar arquivo'}
+                  <input type="file" accept={ACCEPT_DOC} hidden disabled={importing} onChange={(e) => importDoc('invoice', e)} />
+                </label>
+              </div>
+              {importNote && <div className="muted" style={{ marginTop: 8 }}>{importNote}</div>}
+            </div>
+            <label>Projeto (obrigatório)</label>
             <select value={inv.projectId} onChange={(e) => setInv({ ...inv, projectId: e.target.value })}>
               <option value="">Selecione…</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
@@ -119,7 +183,7 @@ export default function FinanceiroPage() {
             <input type="date" value={inv.issueDate} onChange={(e) => setInv({ ...inv, issueDate: e.target.value })} />
             <label>Vencimento</label>
             <input type="date" value={inv.dueDate} onChange={(e) => setInv({ ...inv, dueDate: e.target.value })} />
-            <div className="stack" style={{ marginTop: 16 }}>
+            <div className="stack actions" style={{ marginTop: 16 }}>
               <button className="btn" disabled={busy} onClick={createInvoice}>Salvar</button>
               <button className="btn secondary" onClick={() => setShowForm(false)}>Cancelar</button>
             </div>
@@ -128,6 +192,16 @@ export default function FinanceiroPage() {
         {showForm && tab === 'pagar' && (g7 || isSub) && (
           <div className="card">
             <h3>Novo payroll</h3>
+            <div className="card" style={{ background: 'var(--panel2)', padding: 12 }}>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="muted">Importar de arquivo (PDF ou Excel):</span>
+                <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer', margin: 0 }}>
+                  {importing ? 'Lendo…' : '📎 Anexar arquivo'}
+                  <input type="file" accept={ACCEPT_DOC} hidden disabled={importing} onChange={(e) => importDoc('bill', e)} />
+                </label>
+              </div>
+              {importNote && <div className="muted" style={{ marginTop: 8 }}>{importNote}</div>}
+            </div>
             {g7 && (
               <>
                 <label>Subcontratada</label>
@@ -139,9 +213,9 @@ export default function FinanceiroPage() {
             )}
             <label>Valor (USD)</label>
             <input type="number" inputMode="decimal" value={bill.amount} onChange={(e) => setBill({ ...bill, amount: e.target.value })} />
-            <label>Projeto (opcional)</label>
+            <label>Projeto (obrigatório)</label>
             <select value={bill.projectId} onChange={(e) => setBill({ ...bill, projectId: e.target.value })}>
-              <option value="">—</option>
+              <option value="">Selecione…</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
             </select>
             <label>Descrição (opcional)</label>
@@ -150,7 +224,7 @@ export default function FinanceiroPage() {
             <input value={bill.number} onChange={(e) => setBill({ ...bill, number: e.target.value })} />
             <label>Vencimento</label>
             <input type="date" value={bill.dueDate} onChange={(e) => setBill({ ...bill, dueDate: e.target.value })} />
-            <div className="stack" style={{ marginTop: 16 }}>
+            <div className="stack actions" style={{ marginTop: 16 }}>
               <button className="btn" disabled={busy} onClick={createBill}>Salvar</button>
               <button className="btn secondary" onClick={() => setShowForm(false)}>Cancelar</button>
             </div>
@@ -160,7 +234,8 @@ export default function FinanceiroPage() {
         {/* Listas */}
         {tab === 'receber' && (
           invoices.length === 0 ? <div className="center">Nenhum invoice.</div> :
-          invoices.map((i) => (
+          <div className="grid-cards">
+          {invoices.map((i) => (
             <div className="card" key={i.id}>
               <div className="row between">
                 <h3>{i.project?.code || 'Projeto'} {i.number ? `· ${i.number}` : ''}</h3>
@@ -177,11 +252,13 @@ export default function FinanceiroPage() {
                 )}
               </div>
             </div>
-          ))
+          ))}
+          </div>
         )}
         {tab === 'pagar' && (
           bills.length === 0 ? <div className="center">Nenhum payroll.</div> :
-          bills.map((b) => (
+          <div className="grid-cards">
+          {bills.map((b) => (
             <div className="card" key={b.id}>
               <div className="row between">
                 <h3>{b.subcontractor?.name || 'Subcontratada'} {b.number ? `· ${b.number}` : ''}</h3>
@@ -198,7 +275,8 @@ export default function FinanceiroPage() {
                 )}
               </div>
             </div>
-          ))
+          ))}
+          </div>
         )}
       </div>
     </>

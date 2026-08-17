@@ -1,9 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body, Controller, Get, Param, Patch, Post, Query,
+  UploadedFile, UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { InvoiceStatus, UserRole } from '@prisma/client';
 import { AuthUser, CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationDto } from '../../common/dtos/pagination.dto';
+import { DocumentParseService } from '../finance-import/document-parse.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoicesService } from './invoices.service';
@@ -14,12 +19,24 @@ const G7 = [UserRole.GLOBAL7_ADMIN, UserRole.GLOBAL7_STAFF];
 @ApiBearerAuth()
 @Controller('invoices')
 export class InvoicesController {
-  constructor(private readonly invoices: InvoicesService) {}
+  constructor(
+    private readonly invoices: InvoicesService,
+    private readonly parser: DocumentParseService,
+  ) {}
 
   @Roles(...G7)
   @Post()
   create(@Body() dto: CreateInvoiceDto) {
     return this.invoices.create(dto);
+  }
+
+  // Lê um PDF/Excel de invoice e devolve os campos p/ preencher (sem gravar).
+  @Roles(...G7)
+  @Post('parse')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 15 * 1024 * 1024 } }))
+  parse(@UploadedFile() file: Express.Multer.File) {
+    return this.parser.parse(file);
   }
 
   @Get()
