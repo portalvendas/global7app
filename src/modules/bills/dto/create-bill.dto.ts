@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsDateString, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { FinanceLineDto } from '../../invoices/dto/create-invoice.dto';
 
 export class CreateBillDto {
   @Type(() => Number)
@@ -31,4 +32,11 @@ export class CreateBillDto {
   @IsOptional()
   @IsString()
   subcontractorCompanyId?: string;
+
+  // Linhas de serviço (valor de repasse). Se enviadas, o amount é recalculado pela soma.
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FinanceLineDto)
+  lines?: FinanceLineDto[];
 }

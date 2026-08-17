@@ -234,6 +234,8 @@ model Invoice {
   projectId       String        @map("project_id")
   clientCompanyId String        @map("client_company_id")
   number          String?
+  issuedTo        String?       @map("issued_to")
+  billedTo        String?       @map("billed_to")
   amount          Decimal       @db.Decimal(14, 2)
   currency        String        @default("USD") @db.VarChar(3)
   status          InvoiceStatus @default(DRAFT)
@@ -247,12 +249,30 @@ model Invoice {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  client  Company @relation(fields: [clientCompanyId], references: [id])
+  project Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  client  Company       @relation(fields: [clientCompanyId], references: [id])
+  lines   InvoiceLine[]
 
   @@index([projectId])
   @@index([clientCompanyId])
   @@map("invoices")
+}
+
+// Linha de serviço da invoice (valor CHEIO). rate = valor cruzado (projeto+item).
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String  @map("invoice_id")
+  code        String?
+  description String
+  unit        String?
+  quantity    Decimal @default(0) @db.Decimal(14, 2)
+  rate        Decimal @default(0) @db.Decimal(14, 2)
+  total       Decimal @default(0) @db.Decimal(14, 2)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
 }
 
 model Bill {
@@ -277,14 +297,32 @@ model Bill {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  project       Project? @relation(fields: [projectId], references: [id])
-  subcontractor Company  @relation(fields: [subcontractorCompanyId], references: [id])
-  submittedBy   User?    @relation("BillSubmittedBy", fields: [submittedByUserId], references: [id])
-  approvedBy    User?    @relation("BillApprovedBy", fields: [approvedByUserId], references: [id])
+  project       Project?   @relation(fields: [projectId], references: [id])
+  subcontractor Company    @relation(fields: [subcontractorCompanyId], references: [id])
+  submittedBy   User?      @relation("BillSubmittedBy", fields: [submittedByUserId], references: [id])
+  approvedBy    User?      @relation("BillApprovedBy", fields: [approvedByUserId], references: [id])
+  lines         BillLine[]
 
   @@index([subcontractorCompanyId])
   @@index([projectId])
   @@map("bills")
+}
+
+// Linha de serviço do payroll (valor de REPASSE). rate = valor cruzado (projeto+item).
+model BillLine {
+  id          String  @id @default(cuid())
+  billId      String  @map("bill_id")
+  code        String?
+  description String
+  unit        String?
+  quantity    Decimal @default(0) @db.Decimal(14, 2)
+  rate        Decimal @default(0) @db.Decimal(14, 2)
+  total       Decimal @default(0) @db.Decimal(14, 2)
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@map("bill_lines")
 }
 
 // ─── Daily Production (fases 2-3; tabelas já criadas) ─────────

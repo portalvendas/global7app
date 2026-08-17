@@ -5,6 +5,12 @@ import { PaginationDto } from '../../common/dtos/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateBillDto } from './dto/create-bill.dto';
 
+const BILL_INCLUDE = {
+  subcontractor: { select: { id: true, name: true } },
+  project: { select: { id: true, code: true } },
+  lines: { orderBy: { id: 'asc' as const } },
+};
+
 @Injectable()
 export class BillsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -25,19 +31,34 @@ export class BillsService {
     if (!subcontractorCompanyId) {
       throw new BadRequestException('subcontractorCompanyId é obrigatório quando a Global 7 lança a bill');
     }
+    const lines = dto.lines ?? [];
+    const amount = lines.length
+      ? lines.reduce((s, l) => s + Number(l.total || Number(l.quantity || 0) * Number(l.rate || 0)), 0)
+      : Number(dto.amount || 0);
     return this.prisma.bill.create({
       data: {
         subcontractorCompanyId,
         projectId: dto.projectId,
         teamId: dto.teamId,
-        amount: new Prisma.Decimal(dto.amount),
+        amount: new Prisma.Decimal(amount),
         currency: 'USD',
         description: dto.description,
         number: dto.number,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         submittedByUserId: u.id,
         status: BillStatus.SUBMITTED,
+        lines: {
+          create: lines.map((l) => ({
+            code: l.code || null,
+            description: l.description,
+            unit: l.unit || null,
+            quantity: new Prisma.Decimal(l.quantity || 0),
+            rate: new Prisma.Decimal(l.rate || 0),
+            total: new Prisma.Decimal(l.total || Number(l.quantity || 0) * Number(l.rate || 0)),
+          })),
+        },
       },
+      include: BILL_INCLUDE,
     });
   }
 
@@ -50,10 +71,7 @@ export class BillsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
-          subcontractor: { select: { id: true, name: true } },
-          project: { select: { id: true, code: true } },
-        },
+        include: BILL_INCLUDE,
       }),
       this.prisma.bill.count({ where }),
     ]);
@@ -68,6 +86,7 @@ export class BillsService {
         project: { select: { id: true, code: true } },
         submittedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
+        lines: { orderBy: { id: 'asc' } },
       },
     });
     if (!bill) throw new NotFoundException('Bill não encontrada');

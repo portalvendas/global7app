@@ -6,6 +6,12 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 
+const INVOICE_INCLUDE = {
+  project: { select: { id: true, code: true } },
+  client: { select: { id: true, name: true } },
+  lines: { orderBy: { id: 'asc' as const } },
+};
+
 @Injectable()
 export class InvoicesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -24,17 +30,34 @@ export class InvoicesService {
   async create(dto: CreateInvoiceDto) {
     const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
     if (!project) throw new NotFoundException('Projeto não encontrado');
+    const lines = dto.lines ?? [];
+    const amount = lines.length
+      ? lines.reduce((s, l) => s + Number(l.total || Number(l.quantity || 0) * Number(l.rate || 0)), 0)
+      : Number(dto.amount || 0);
     return this.prisma.invoice.create({
       data: {
         projectId: project.id,
         clientCompanyId: project.clientCompanyId,
-        amount: new Prisma.Decimal(dto.amount),
+        amount: new Prisma.Decimal(amount),
         currency: 'USD',
         number: dto.number,
+        issuedTo: dto.issuedTo,
+        billedTo: dto.billedTo,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
         status: InvoiceStatus.DRAFT,
+        lines: {
+          create: lines.map((l) => ({
+            code: l.code || null,
+            description: l.description,
+            unit: l.unit || null,
+            quantity: new Prisma.Decimal(l.quantity || 0),
+            rate: new Prisma.Decimal(l.rate || 0),
+            total: new Prisma.Decimal(l.total || Number(l.quantity || 0) * Number(l.rate || 0)),
+          })),
+        },
       },
+      include: INVOICE_INCLUDE,
     });
   }
 
@@ -47,7 +70,7 @@ export class InvoicesService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { project: { select: { id: true, code: true } }, client: { select: { id: true, name: true } } },
+        include: INVOICE_INCLUDE,
       }),
       this.prisma.invoice.count({ where }),
     ]);
@@ -57,7 +80,7 @@ export class InvoicesService {
   async findOne(u: AuthUser, id: string) {
     const inv = await this.prisma.invoice.findFirst({
       where: { id, ...this.scopeFor(u) },
-      include: { project: { select: { id: true, code: true } }, client: { select: { id: true, name: true } } },
+      include: INVOICE_INCLUDE,
     });
     if (!inv) throw new NotFoundException('Invoice não encontrada');
     return inv;

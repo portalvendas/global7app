@@ -1,5 +1,33 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsArray, IsDateString, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+
+export class FinanceLineDto {
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsString()
+  description!: string;
+
+  @IsOptional()
+  @IsString()
+  unit?: string;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  quantity!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  rate!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  total!: number;
+}
 
 export class CreateInvoiceDto {
   @IsString()
@@ -15,10 +43,25 @@ export class CreateInvoiceDto {
   number?: string;
 
   @IsOptional()
+  @IsString()
+  issuedTo?: string;
+
+  @IsOptional()
+  @IsString()
+  billedTo?: string;
+
+  @IsOptional()
   @IsDateString()
   issueDate?: string;
 
   @IsOptional()
   @IsDateString()
   dueDate?: string;
+
+  // Linhas de serviço (valor cheio). Se enviadas, o amount é recalculado pela soma.
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FinanceLineDto)
+  lines?: FinanceLineDto[];
 }
