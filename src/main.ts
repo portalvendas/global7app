@@ -49,6 +49,16 @@ async function bootstrap(): Promise<void> {
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
+  // Fail-fast: em produção, nunca subir com segredos ausentes (evita cair nos
+  // defaults 'dev-*' e assinar tokens com segredo público conhecido).
+  if (config.get<string>('NODE_ENV') === 'production') {
+    const required = ['JWT_SECRET', 'JWT_REFRESH_SECRET', 'DATABASE_URL'];
+    const missing = required.filter((k) => !config.get<string>(k));
+    if (missing.length) {
+      throw new Error(`Variáveis de ambiente obrigatórias ausentes: ${missing.join(', ')}`);
+    }
+  }
+
   // CSP ajustado p/ servir o SPA (Next export) no mesmo serviço: o Next injeta
   // scripts/estilos inline (bootstrap RSC) — sem 'unsafe-inline' o Helmet padrão
   // bloqueia esses inline e a página fica em branco ("Connection closed.").

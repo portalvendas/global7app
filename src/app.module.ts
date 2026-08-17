@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { join } from 'path';
 import { PrismaModule } from './database/prisma.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -21,6 +22,9 @@ import { HealthModule } from './modules/health/health.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Rate limit global (in-memory; ok p/ instância única do Render Free).
+    // 100 req/min por IP por padrão; o login/refresh têm limite mais rígido no controller.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -40,6 +44,7 @@ import { HealthModule } from './modules/health/health.module';
     }),
   ],
   providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
