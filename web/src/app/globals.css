@@ -43,3 +43,24 @@ textarea { min-height: 110px; resize: vertical; }
 .center { text-align:center; padding: 40px 0; color: var(--muted); }
 .error { background:#3a1414; color:#f87171; border:1px solid #7f1d1d; border-radius:10px; padding:10px; font-size:14px; margin:10px 0; }
 .stack > * + * { margin-top: 10px; }
+
+/* ── Desktop: usa a largura da tela ─────────────────────────── */
+@media (min-width: 900px) {
+  .container { max-width: 1240px; padding: 24px 32px 96px; }
+
+  /* Listagens em grade que preenchem a largura (projetos, empresas, etc.). */
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; align-items: start; }
+  .grid-cards .card { margin-bottom: 0; }
+
+  /* Formulário em 2 colunas; itens .full ocupam a linha inteira. */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+  .form-grid .full { grid-column: 1 / -1; }
+
+  /* Botões de largura total continuam plenos, mas o "stack" de ações fica lado a lado. */
+  .stack.actions { display: flex; gap: 12px; }
+  .stack.actions > * + * { margin-top: 0; }
+  .stack.actions .btn { width: auto; }
+}
+@media (min-width: 1400px) {
+  .container { max-width: 1440px; }
+}

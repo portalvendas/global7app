@@ -197,23 +197,30 @@ export default function ProjetosPage() {
             <h3>{editId ? 'Editar projeto' : 'Novo projeto'}</h3>
             {error && <div className="error">{error}</div>}
 
-            <label>Código do projeto</label>
-            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ex.: PRJ-001" />
-
-            <label>Tipo de projeto</label>
-            <select value={projectType} onChange={(e) => setProjectType(e.target.value as ProjectType)}>
-              <option value="SPLICE">Splice</option>
-              <option value="CONSTRUCTION">Construction</option>
-            </select>
-
-            <label>Origem do projeto</label>
-            <input value={projectSource} onChange={(e) => setProjectSource(e.target.value)} placeholder="ex.: Spectrum, Dodd's" />
-
-            <label>Contratante (cliente)</label>
-            <select value={clientCompanyId} onChange={(e) => setClientCompanyId(e.target.value)}>
-              <option value="">Selecione…</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="form-grid">
+              <div>
+                <label>Código do projeto</label>
+                <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ex.: PRJ-001" />
+              </div>
+              <div>
+                <label>Tipo de projeto</label>
+                <select value={projectType} onChange={(e) => setProjectType(e.target.value as ProjectType)}>
+                  <option value="SPLICE">Splice</option>
+                  <option value="CONSTRUCTION">Construction</option>
+                </select>
+              </div>
+              <div>
+                <label>Origem do projeto</label>
+                <input value={projectSource} onChange={(e) => setProjectSource(e.target.value)} placeholder="ex.: Spectrum, Dodd's" />
+              </div>
+              <div>
+                <label>Contratante (cliente)</label>
+                <select value={clientCompanyId} onChange={(e) => setClientCompanyId(e.target.value)}>
+                  <option value="">Selecione…</option>
+                  {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
 
             <label>Subcontratadas (opcional)</label>
             {subs.length === 0 ? (
@@ -293,7 +300,7 @@ export default function ProjetosPage() {
               </div>
             ))}
 
-            <div className="stack" style={{ marginTop: 16 }}>
+            <div className="stack actions" style={{ marginTop: 16 }}>
               <button className="btn" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button>
               <button className="btn secondary" onClick={() => setShowForm(false)}>Cancelar</button>
             </div>
@@ -304,7 +311,9 @@ export default function ProjetosPage() {
 
         {rows.length === 0 ? (
           <div className="center">{listError ? 'Não foi possível carregar.' : 'Nenhum projeto.'}</div>
-        ) : rows.map((p) => {
+        ) : (
+          <div className="grid-cards">
+          {rows.map((p) => {
           const t = projectTotals(p);
           const subNames = (p.subcontractors ?? []).map((s) => s.company.name);
           return (
@@ -332,7 +341,9 @@ export default function ProjetosPage() {
               )}
             </div>
           );
-        })}
+          })}
+          </div>
+        )}
       </div>
     </>
   );
