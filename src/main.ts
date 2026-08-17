@@ -49,7 +49,26 @@ async function bootstrap(): Promise<void> {
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
-  app.use(helmet());
+  // CSP ajustado p/ servir o SPA (Next export) no mesmo serviço: o Next injeta
+  // scripts/estilos inline (bootstrap RSC) — sem 'unsafe-inline' o Helmet padrão
+  // bloqueia esses inline e a página fica em branco ("Connection closed.").
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+          'script-src': ["'self'", "'unsafe-inline'"],
+          'style-src': ["'self'", "'unsafe-inline'"],
+          'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+          'connect-src': ["'self'", 'https:'],
+          'font-src': ["'self'", 'data:'],
+          'worker-src': ["'self'", 'blob:'],
+        },
+      },
+      // o SPA carrega imagens/preview de origens https (WordPress) sem COEP.
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   app.setGlobalPrefix('api/v1');
   app.enableCors({ origin: config.get<string>('CORS_ORIGIN', '*'), credentials: true });
   app.useGlobalPipes(
