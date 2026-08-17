@@ -27,6 +27,17 @@ export class InvoicesService {
     return { id: '__none__' };
   }
 
+  /** Vencimento = data da invoice + Nº de dias dos termos (NET21/NET30…). */
+  private dueFrom(issueDate?: string, terms?: string, due?: string): Date | undefined {
+    if (due) return new Date(due);
+    if (!issueDate || !terms) return undefined;
+    const m = terms.match(/(\d+)/);
+    if (!m) return undefined;
+    const d = new Date(issueDate);
+    d.setDate(d.getDate() + Number(m[1]));
+    return d;
+  }
+
   async create(dto: CreateInvoiceDto) {
     const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
     if (!project) throw new NotFoundException('Projeto não encontrado');
@@ -43,8 +54,9 @@ export class InvoicesService {
         number: dto.number,
         issuedTo: dto.issuedTo,
         billedTo: dto.billedTo,
+        paymentTerms: dto.paymentTerms,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        dueDate: this.dueFrom(dto.issueDate, dto.paymentTerms, dto.dueDate),
         status: InvoiceStatus.DRAFT,
         lines: {
           create: lines.map((l) => ({
@@ -88,14 +100,50 @@ export class InvoicesService {
 
   async update(id: string, dto: UpdateInvoiceDto) {
     const inv = await this.getOrThrow(id);
-    if (inv.status !== InvoiceStatus.DRAFT) throw new BadRequestException('Só é possível editar invoice em DRAFT');
-    const data: Prisma.InvoiceUpdateInput = {
-      number: dto.number,
-      issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
-    };
-    if (dto.amount !== undefined) data.amount = new Prisma.Decimal(dto.amount);
-    return this.prisma.invoice.update({ where: { id }, data });
+    if (inv.status === InvoiceStatus.PAID) throw new BadRequestException('Não é possível editar invoice paga');
+    return this.prisma.$transaction(async (tx) => {
+      const data: Prisma.InvoiceUpdateInput = {
+        number: dto.number,
+        issuedTo: dto.issuedTo,
+        billedTo: dto.billedTo,
+        paymentTerms: dto.paymentTerms,
+        issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+      };
+      // Troca de projeto ajusta o cliente.
+      if (dto.projectId && dto.projectId !== inv.projectId) {
+        const project = await tx.project.findUnique({ where: { id: dto.projectId } });
+        if (!project) throw new NotFoundException('Projeto não encontrado');
+        data.project = { connect: { id: project.id } };
+        data.client = { connect: { id: project.clientCompanyId } };
+      }
+      const terms = dto.paymentTerms ?? inv.paymentTerms ?? undefined;
+      const issue = dto.issueDate ?? (inv.issueDate ? inv.issueDate.toISOString().slice(0, 10) : undefined);
+      const due = this.dueFrom(issue, terms, dto.dueDate);
+      if (due) data.dueDate = due;
+
+      // Substitui as linhas quando enviadas; recalcula o amount.
+      if (dto.lines) {
+        await tx.invoiceLine.deleteMany({ where: { invoiceId: id } });
+        if (dto.lines.length) {
+          await tx.invoiceLine.createMany({
+            data: dto.lines.map((l) => ({
+              invoiceId: id,
+              code: l.code || null,
+              description: l.description,
+              unit: l.unit || null,
+              quantity: new Prisma.Decimal(l.quantity || 0),
+              rate: new Prisma.Decimal(l.rate || 0),
+              total: new Prisma.Decimal(l.total || Number(l.quantity || 0) * Number(l.rate || 0)),
+            })),
+          });
+        }
+        data.amount = new Prisma.Decimal(dto.lines.reduce((s, l) => s + Number(l.total || Number(l.quantity || 0) * Number(l.rate || 0)), 0));
+      } else if (dto.amount !== undefined) {
+        data.amount = new Prisma.Decimal(dto.amount);
+      }
+      await tx.invoice.update({ where: { id }, data });
+      return tx.invoice.findUnique({ where: { id }, include: INVOICE_INCLUDE });
+    });
   }
 
   async send(id: string) {

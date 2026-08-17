@@ -8,13 +8,13 @@ import { isG7, useMe } from '@/lib/session';
 
 interface Ref { id: string; name?: string; code?: string }
 interface Line { id?: string; code?: string | null; description: string; unit?: string | null; quantity: string | number; rate: string | number; total: string | number }
-interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
+interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; paymentTerms?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
 interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; lines?: Line[] }
 interface Project { id: string; code: string }
 interface Svc { id?: string; code: string; description: string; unit?: string | null; clientValue: string | number; subValue: string | number }
 interface Company { id: string; name: string; type: string }
 interface ParsedLine { code: string | null; description: string; unit: string | null; quantity: number; rate: number; total: number }
-interface ParsedDoc { amount: number | null; number: string | null; issueDate: string | null; dueDate: string | null; projectCode: string | null; issuedTo: string | null; billedTo: string | null; description: string | null; lines: ParsedLine[]; note: string }
+interface ParsedDoc { amount: number | null; number: string | null; issueDate: string | null; dueDate: string | null; projectCode: string | null; issuedTo: string | null; billedTo: string | null; paymentTerms: string | null; description: string | null; lines: ParsedLine[]; note: string }
 
 type Kind = 'invoice' | 'bill';
 interface Row { code: string; description: string; unit: string; quantity: string; rate: string }
@@ -24,6 +24,17 @@ const ACCEPT_DOC = 'application/pdf,.pdf,.xlsx,.xls,application/vnd.openxmlforma
 const norm = (s?: string | null) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const num = (v: string | number) => { const n = Number(v); return isFinite(n) ? n : 0; };
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+// Termos de pagamento e cálculo do vencimento (data da invoice + Nº de dias).
+const TERMS = ['NET7', 'NET14', 'NET15', 'NET21', 'NET30', 'NET45', 'NET60'];
+const termDays = (t?: string) => { const m = (t || '').match(/(\d+)/); return m ? Number(m[1]) : null; };
+function addDays(iso: string, days: number): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
 
 export default function FinanceiroPage() {
   const { me, loading } = useMe();
@@ -38,9 +49,11 @@ export default function FinanceiroPage() {
   const [importing, setImporting] = useState(false);
   const [importNote, setImportNote] = useState('');
 
-  const [inv, setInv] = useState({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', dueDate: '', amount: '' });
+  const [inv, setInv] = useState({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' });
+  const [invEditId, setInvEditId] = useState<string | null>(null);
   const [invLines, setInvLines] = useState<Row[]>([emptyRow()]);
   const [invSvc, setInvSvc] = useState<Svc[]>([]);
+  const invDue = inv.issueDate && termDays(inv.paymentTerms) != null ? addDays(inv.issueDate, termDays(inv.paymentTerms) as number) : '';
 
   const [bill, setBill] = useState({ subcontractorCompanyId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' });
   const [billLines, setBillLines] = useState<Row[]>([emptyRow()]);
@@ -172,7 +185,7 @@ export default function FinanceiroPage() {
         };
       });
       if (kind === 'invoice') {
-        setInv((p) => ({ ...p, projectId: pid || p.projectId, issuedTo: companyByName(r.issuedTo) || p.issuedTo, billedTo: companyByName(r.billedTo) || p.billedTo, number: r.number || p.number, issueDate: r.issueDate || p.issueDate }));
+        setInv((p) => ({ ...p, projectId: pid || p.projectId, issuedTo: companyByName(r.issuedTo) || p.issuedTo, billedTo: companyByName(r.billedTo) || p.billedTo, number: r.number || p.number, issueDate: r.issueDate || p.issueDate, paymentTerms: r.paymentTerms || p.paymentTerms }));
         setLines('invoice', rows);
       } else {
         setBill((p) => ({ ...p, projectId: pid || p.projectId, number: r.number || p.number, dueDate: r.dueDate || p.dueDate }));
@@ -202,24 +215,42 @@ export default function FinanceiroPage() {
     finally { setBusy(false); }
   }
 
-  function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', dueDate: '', amount: '' }); setInvLines([emptyRow()]); }
+  function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' }); setInvLines([emptyRow()]); setInvEditId(null); }
   function resetBill() { setBill({ subcontractorCompanyId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
+
+  function startEditInvoice(i: Invoice) {
+    setInvEditId(i.id);
+    setInv({
+      projectId: i.project?.id || '', issuedTo: i.issuedTo || '', billedTo: i.billedTo || '',
+      number: i.number || '', issueDate: i.issueDate ? i.issueDate.slice(0, 10) : '',
+      paymentTerms: i.paymentTerms || '', amount: '',
+    });
+    setInvLines((i.lines && i.lines.length)
+      ? i.lines.map((l) => ({ code: l.code || '', description: l.description, unit: l.unit || '', quantity: String(l.quantity ?? ''), rate: String(l.rate ?? '') }))
+      : [emptyRow()]);
+    setTab('receber'); setShowForm(true); setError(''); setImportNote('');
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   async function createInvoice() {
     if (!inv.projectId) return setError('Vincule um projeto (obrigatório)');
+    if (!inv.issueDate) return setError('Informe a data da invoice');
+    if (!inv.paymentTerms) return setError('Informe os termos de pagamento');
     const lines = cleanLines(invLines);
     const amount = lines.length ? lines.reduce((s, l) => s + l.total, 0) : num(inv.amount);
     if (amount <= 0) return setError('Informe as linhas de serviço ou um valor');
     setBusy(true); setError('');
+    const body = {
+      projectId: inv.projectId, amount, number: inv.number || undefined,
+      issuedTo: inv.issuedTo || undefined, billedTo: inv.billedTo || undefined,
+      paymentTerms: inv.paymentTerms, issueDate: inv.issueDate, dueDate: invDue || undefined,
+      lines: lines.length ? lines : undefined,
+    };
     try {
-      await api('/invoices', { method: 'POST', body: {
-        projectId: inv.projectId, amount, number: inv.number || undefined,
-        issuedTo: inv.issuedTo || undefined, billedTo: inv.billedTo || undefined,
-        issueDate: inv.issueDate || undefined, dueDate: inv.dueDate || undefined,
-        lines: lines.length ? lines : undefined,
-      } });
+      if (invEditId) await api(`/invoices/${invEditId}`, { method: 'PATCH', body });
+      else await api('/invoices', { method: 'POST', body });
       setShowForm(false); resetInv(); setImportNote(''); load();
-    } catch (err) { setError(err instanceof ApiError ? err.message : 'Falha ao criar'); }
+    } catch (err) { setError(err instanceof ApiError ? err.message : 'Falha ao salvar'); }
     finally { setBusy(false); }
   }
 
@@ -297,7 +328,7 @@ export default function FinanceiroPage() {
         <div className="row between">
           <h2 style={{ margin: '4px 0' }}>Invoices &amp; Payroll</h2>
           {((tab === 'receber' && g7) || (tab === 'pagar' && (g7 || isSub))) && (
-            <button className="btn small" onClick={() => { setShowForm(!showForm); setError(''); setImportNote(''); }}>+ Novo</button>
+            <button className="btn small" onClick={() => { const opening = !showForm; setShowForm(opening); setError(''); setImportNote(''); if (opening) { if (tab === 'receber') resetInv(); else resetBill(); } }}>+ Novo</button>
           )}
         </div>
 
@@ -311,7 +342,7 @@ export default function FinanceiroPage() {
         {/* Formulário Invoice */}
         {showForm && tab === 'receber' && g7 && (
           <div className="card">
-            <h3>Novo invoice</h3>
+            <h3>{invEditId ? 'Editar invoice' : 'Novo invoice'}</h3>
             <div className="card" style={{ background: 'var(--panel2)', padding: 12 }}>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span className="muted">Importar de arquivo (PDF ou Excel):</span>
@@ -350,12 +381,19 @@ export default function FinanceiroPage() {
                 </select>
               </div>
               <div>
-                <label>Emissão</label>
+                <label>Data da invoice</label>
                 <input type="date" value={inv.issueDate} onChange={(e) => setInv({ ...inv, issueDate: e.target.value })} />
               </div>
               <div>
-                <label>Vencimento</label>
-                <input type="date" value={inv.dueDate} onChange={(e) => setInv({ ...inv, dueDate: e.target.value })} />
+                <label>Termos de pagamento (obrigatório)</label>
+                <select value={inv.paymentTerms} onChange={(e) => setInv({ ...inv, paymentTerms: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {(inv.paymentTerms && !TERMS.includes(inv.paymentTerms) ? [inv.paymentTerms, ...TERMS] : TERMS).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Vencimento (calculado)</label>
+                <input value={invDue ? dateBR(invDue) : '—'} disabled />
               </div>
             </div>
 
@@ -433,14 +471,13 @@ export default function FinanceiroPage() {
                 <h3>{i.project?.code || 'Projeto'} {i.number ? `· ${i.number}` : ''}</h3>
                 <span style={{ fontWeight: 700 }}>{money(i.amount)}</span>
               </div>
-              <div className="muted">Billed to: {i.billedTo || i.client?.name || '—'} · Venc.: {dateBR(i.dueDate)}</div>
+              <div className="muted">Billed to: {i.billedTo || i.client?.name || '—'}{i.paymentTerms ? ` · ${i.paymentTerms}` : ''} · Venc.: {dateBR(i.dueDate)}</div>
               {(i.lines?.length ?? 0) > 0 && <div className="muted" style={{ marginTop: 4 }}>{i.lines!.length} item(ns)</div>}
               <div className="row between" style={{ marginTop: 8 }}>
                 <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{i.status}</span>
-                {g7 && (
+                {g7 && i.status !== 'PAID' && (
                   <div className="row" style={{ gap: 8 }}>
-                    {i.status === 'DRAFT' && <button className="btn small" disabled={busy} onClick={() => act(`/invoices/${i.id}/send`)}>Enviar</button>}
-                    {i.status === 'SENT' && <button className="btn small ok" disabled={busy} onClick={() => act(`/invoices/${i.id}/pay`)}>Marcar recebida</button>}
+                    <button className="btn small secondary" onClick={() => startEditInvoice(i)}>Editar</button>
                   </div>
                 )}
               </div>

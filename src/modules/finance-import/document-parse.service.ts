@@ -24,6 +24,7 @@ export interface ParsedFinanceDoc {
   projectCode: string | null; // código bruto detectado no arquivo (ex.: "SO34E")
   issuedTo: string | null;
   billedTo: string | null;
+  paymentTerms: string | null; // NET7, NET21, NET30…
   description: string | null;
   lines: ParsedLine[];
   note: string;
@@ -75,6 +76,7 @@ export class DocumentParseService {
       projectCode: base.projectCode,
       issuedTo: base.issuedTo,
       billedTo: base.billedTo,
+      paymentTerms: base.paymentTerms,
       description: null,
       lines,
       note: found.length ? `Extraído: ${found.join(', ')}. Confira antes de salvar.` : 'Não reconheci os campos automaticamente. Preencha manualmente.',
@@ -82,7 +84,7 @@ export class DocumentParseService {
   }
 
   private empty(note: string): ParsedFinanceDoc {
-    return { amount: null, number: null, issueDate: null, dueDate: null, projectCode: null, issuedTo: null, billedTo: null, description: null, lines: [], note };
+    return { amount: null, number: null, issueDate: null, dueDate: null, projectCode: null, issuedTo: null, billedTo: null, paymentTerms: null, description: null, lines: [], note };
   }
 
   private async readPdf(buffer: Buffer): Promise<string[]> {
@@ -145,7 +147,16 @@ export class DocumentParseService {
       projectCode: this.findProjectCode(joined),
       issuedTo: this.findLabelled(lines, /ISSUED TO/i),
       billedTo: this.findLabelled(lines, /BILLED TO/i),
+      paymentTerms: this.findTerms(joined),
     };
+  }
+
+  private findTerms(text: string): string | null {
+    let m = text.match(/\bNET\s*-?\s*(\d{1,3})\b/i);
+    if (m) return 'NET' + m[1];
+    m = text.match(/payment\s+(?:with(?:in)?|due(?:\s+in)?)\s+(\d{1,3})\s*days?/i);
+    if (m) return 'NET' + m[1];
+    return null;
   }
 
   private findAmount(lines: string[]): number | null {

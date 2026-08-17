@@ -50,6 +50,10 @@ export class CreateInvoiceDto {
   @IsString()
   billedTo?: string;
 
+  // Termos de pagamento (NET21, NET30…). Obrigatório na criação.
+  @IsString()
+  paymentTerms!: string;
+
   @IsOptional()
   @IsDateString()
   issueDate?: string;
