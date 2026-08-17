@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { Nav } from '@/components/nav';
-import { money } from '@/lib/format';
 import { isG7, useMe } from '@/lib/session';
 
 type ProjectType = 'SPLICE' | 'CONSTRUCTION';
@@ -216,12 +215,6 @@ export default function ProjetosPage() {
     } finally { setBusy(false); }
   }
 
-  function projectTotals(p: Project) {
-    let cheio = 0; let repasse = 0;
-    for (const s of p.services ?? []) { cheio += Number(s.clientValue || 0); repasse += Number(s.subValue || 0); }
-    return { cheio, repasse };
-  }
-
   if (loading || !me) return <div className="center">Carregando…</div>;
 
   return (
@@ -365,7 +358,6 @@ export default function ProjetosPage() {
         ) : (
           <div className="grid-cards">
           {rows.map((p) => {
-          const t = projectTotals(p);
           const subNames = (p.subcontractors ?? []).map((s) => s.company.name);
           return (
             <div className="card" key={p.id}>
@@ -381,9 +373,6 @@ export default function ProjetosPage() {
               {p.projectSource && <div className="muted" style={{ marginTop: 4 }}>Origem: {p.projectSource}</div>}
               <div className="muted" style={{ marginTop: 4 }}>
                 Subcontratadas: {subNames.length ? subNames.join(', ') : '—'}
-              </div>
-              <div className="muted" style={{ marginTop: 4 }}>
-                Repasse total: {money(t.repasse)}
               </div>
               {canEdit && (
                 <div className="row" style={{ gap: 8, marginTop: 10 }}>
