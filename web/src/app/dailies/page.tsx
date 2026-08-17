@@ -8,6 +8,8 @@ import { clearTokens, isLogged } from '@/lib/auth';
 import { db, DraftDaily } from '@/lib/db';
 import { useOnline } from '@/lib/net';
 import { flushQueue } from '@/lib/sync';
+import { Nav } from '@/components/nav';
+import type { Me as SessionMe } from '@/lib/session';
 
 type Role = 'GLOBAL7_ADMIN' | 'GLOBAL7_STAFF' | 'SUBCONTRACTOR_ADMIN' | 'TEAM_MEMBER' | 'CLIENT_VIEWER';
 interface Me { id: string; role: Role; company: { type: string } }
@@ -82,13 +84,14 @@ export default function DailiesPage() {
 
   return (
     <>
-      <div className="topbar">
-        <h1>Daily Production</h1>
-        <div className="row" style={{ gap: 8 }}>
-          {me && <span className="muted">{me.role.replace('GLOBAL7_', 'G7 ').replace('_', ' ')}</span>}
+      {me ? (
+        <Nav me={me as unknown as SessionMe} />
+      ) : (
+        <div className="topbar">
+          <h1>Daily Production</h1>
           <button className="btn small secondary" onClick={logout}>Sair</button>
         </div>
-      </div>
+      )}
       <div className="container">
         <div className="tabs">
           {TABS.map((t) => (

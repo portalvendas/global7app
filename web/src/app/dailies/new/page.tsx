@@ -157,9 +157,27 @@ function NewInner() {
         </div>
 
         <label>Fotos de produção</label>
-        <input type="file" accept="image/*" capture="environment" multiple onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            📷 Câmera
+            <input type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
+          </label>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            🖼️ Galeria
+            <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
+          </label>
+        </div>
         <label>Fotos de mapa</label>
-        <input type="file" accept="image/*" capture="environment" multiple onChange={(e) => onFiles(e, 'MAP_PHOTO')} />
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            📷 Câmera
+            <input type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => onFiles(e, 'MAP_PHOTO')} />
+          </label>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            🖼️ Galeria
+            <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'MAP_PHOTO')} />
+          </label>
+        </div>
 
         {photos.length > 0 && (
           <div className="thumbs">
