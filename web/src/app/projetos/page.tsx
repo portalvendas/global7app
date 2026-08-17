@@ -6,13 +6,14 @@ import { Nav } from '@/components/nav';
 import { money } from '@/lib/format';
 import { isG7, useMe } from '@/lib/session';
 
+type ProjectType = 'SPLICE' | 'CONSTRUCTION';
 interface Ref { id: string; name?: string }
 interface ServiceRow {
   id?: string; code: string; description: string; unit: string;
   clientValue: string; subValue: string;
 }
 interface Project {
-  id: string; code: string; currency: string; status: string;
+  id: string; code: string; projectType: ProjectType; projectSource?: string | null; currency: string; status: string;
   client?: Ref | null;
   subcontractors?: { company: Ref }[];
   services?: { id: string; code: string; description: string; unit?: string | null; clientValue: string | number; subValue: string | number }[];
@@ -32,12 +33,15 @@ export default function ProjetosPage() {
   const [rows, setRows] = useState<Project[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [code, setCode] = useState('');
+  const [projectType, setProjectType] = useState<ProjectType>('SPLICE');
+  const [projectSource, setProjectSource] = useState('');
   const [clientCompanyId, setClientCompanyId] = useState('');
   const [subIds, setSubIds] = useState<string[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
   const [editId, setEditId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
   const [busy, setBusy] = useState(false);
   // Import PDF
   const [importTarget, setImportTarget] = useState<Target>('clientValue');
@@ -45,7 +49,10 @@ export default function ProjetosPage() {
   const [importNote, setImportNote] = useState('');
 
   const load = useCallback(() => {
-    api<{ items: Project[] }>('/projects?pageSize=100').then((r) => setRows(r.items)).catch(() => {});
+    setListError('');
+    api<{ items: Project[] }>('/projects?pageSize=100')
+      .then((r) => setRows(r.items))
+      .catch((e) => setListError(e instanceof ApiError ? e.message : 'Falha ao carregar projetos'));
   }, []);
   useEffect(() => {
     if (!me) return;
@@ -58,12 +65,14 @@ export default function ProjetosPage() {
   const subs = companies.filter((c) => c.type === 'SUBCONTRACTOR');
 
   function resetForm() {
-    setCode(''); setClientCompanyId(''); setSubIds([]); setServices([emptyService()]);
+    setCode(''); setProjectType('SPLICE'); setProjectSource(''); setClientCompanyId(''); setSubIds([]); setServices([emptyService()]);
     setError(''); setImportNote(''); setImportTarget('clientValue');
   }
   function startCreate() { resetForm(); setEditId(null); setShowForm(true); }
   function startEdit(p: Project) {
     setCode(p.code);
+    setProjectType(p.projectType || 'SPLICE');
+    setProjectSource(p.projectSource || '');
     setClientCompanyId(p.client?.id || '');
     setSubIds((p.subcontractors ?? []).map((s) => s.company.id));
     setServices(
@@ -151,6 +160,8 @@ export default function ProjetosPage() {
     setBusy(true); setError('');
     const body: Record<string, unknown> = {
       code: code.trim(),
+      projectType,
+      projectSource: projectSource.trim() || undefined,
       clientCompanyId,
       subcontractorCompanyIds: subIds,
       services: cleaned,
@@ -188,6 +199,15 @@ export default function ProjetosPage() {
 
             <label>Código do projeto</label>
             <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ex.: PRJ-001" />
+
+            <label>Tipo de projeto</label>
+            <select value={projectType} onChange={(e) => setProjectType(e.target.value as ProjectType)}>
+              <option value="SPLICE">Splice</option>
+              <option value="CONSTRUCTION">Construction</option>
+            </select>
+
+            <label>Origem do projeto</label>
+            <input value={projectSource} onChange={(e) => setProjectSource(e.target.value)} placeholder="ex.: Spectrum, Dodd's" />
 
             <label>Contratante (cliente)</label>
             <select value={clientCompanyId} onChange={(e) => setClientCompanyId(e.target.value)}>
@@ -280,8 +300,10 @@ export default function ProjetosPage() {
           </div>
         )}
 
+        {listError && <div className="error">{listError}</div>}
+
         {rows.length === 0 ? (
-          <div className="center">Nenhum projeto.</div>
+          <div className="center">{listError ? 'Não foi possível carregar.' : 'Nenhum projeto.'}</div>
         ) : rows.map((p) => {
           const t = projectTotals(p);
           const subNames = (p.subcontractors ?? []).map((s) => s.company.name);
@@ -289,11 +311,14 @@ export default function ProjetosPage() {
             <div className="card" key={p.id}>
               <div className="row between">
                 <h3>{p.code}</h3>
-                <span style={{ fontWeight: 700 }}>{money(t.cheio)}</span>
+                <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>
+                  {p.projectType === 'CONSTRUCTION' ? 'Construction' : 'Splice'}
+                </span>
               </div>
               <div className="muted">
                 Contratante: {p.client?.name || '—'} · {(p.services ?? []).length} serviço(s)
               </div>
+              {p.projectSource && <div className="muted" style={{ marginTop: 4 }}>Origem: {p.projectSource}</div>}
               <div className="muted" style={{ marginTop: 4 }}>
                 Subcontratadas: {subNames.length ? subNames.join(', ') : '—'}
               </div>

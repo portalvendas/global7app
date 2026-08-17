@@ -23,6 +23,8 @@ export class ProjectsService {
     return this.prisma.project.create({
       data: {
         code: dto.code,
+        projectType: dto.projectType,
+        projectSource: dto.projectSource,
         clientCompanyId: dto.clientCompanyId,
         subcontractors: { create: (dto.subcontractorCompanyIds ?? []).map((companyId) => ({ companyId })) },
         services: { create: (dto.services ?? []).map((s) => this.serviceData(s)) },
@@ -80,7 +82,7 @@ export class ProjectsService {
     return this.prisma.$transaction(async (tx) => {
       await tx.project.update({
         where: { id },
-        data: { code: dto.code, clientCompanyId: dto.clientCompanyId },
+        data: { code: dto.code, projectType: dto.projectType, projectSource: dto.projectSource, clientCompanyId: dto.clientCompanyId },
       });
       if (dto.subcontractorCompanyIds) {
         await tx.projectSubcontractor.deleteMany({ where: { projectId: id } });

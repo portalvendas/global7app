@@ -31,6 +31,11 @@ enum DailyStatus {
   REJECTED
 }
 
+enum ProjectType {
+  SPLICE
+  CONSTRUCTION
+}
+
 enum InvoiceStatus {
   DRAFT
   SENT
@@ -164,10 +169,12 @@ model TeamMembership {
 
 // ─── Projetos ────────────────────────────────────────────────
 model Project {
-  id       String @id @default(cuid())
-  code     String @unique
-  currency String @default("USD") @db.VarChar(3)
-  status   String @default("ACTIVE")
+  id            String      @id @default(cuid())
+  code          String      @unique
+  projectType   ProjectType @default(SPLICE) @map("project_type")
+  projectSource String?     @map("project_source") // origem (texto livre): Spectrum, Dodd's, etc.
+  currency      String      @default("USD") @db.VarChar(3)
+  status        String      @default("ACTIVE")
 
   clientCompanyId String @map("client_company_id")
 
