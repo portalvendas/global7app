@@ -76,6 +76,14 @@ export default function FinanceiroPage() {
   useEffect(() => { if (invSvc.length) setInvLines((p) => fillRates(p, invSvc, 'invoice')); }, [invSvc]);
   useEffect(() => { if (billSvc.length) setBillLines((p) => fillRates(p, billSvc, 'bill')); }, [billSvc]);
 
+  // Default do "Issued to" = nossa empresa (OPERATOR) ao abrir o form de invoice.
+  useEffect(() => {
+    if (showForm && tab === 'receber' && !inv.issuedTo && companies.length) {
+      const op = companies.find((c) => c.type === 'OPERATOR');
+      if (op) setInv((p) => ({ ...p, issuedTo: op.name }));
+    }
+  }, [showForm, tab, companies, inv.issuedTo]);
+
   function svcRate(list: Svc[], code: string, kind: Kind): number | null {
     const s = list.find((x) => norm(x.code) === norm(code) && norm(code));
     if (!s) return null;
@@ -132,6 +140,14 @@ export default function FinanceiroPage() {
     return hit ? hit.id : '';
   }
 
+  // Casa um nome extraído do arquivo com uma empresa cadastrada (retorna o nome exato).
+  function companyByName(name?: string | null): string {
+    const n = norm(name);
+    if (!n) return '';
+    const hit = companies.find((c) => { const cn = norm(c.name); return cn && (cn === n || cn.includes(n) || n.includes(cn)); });
+    return hit ? hit.name : '';
+  }
+
   async function importDoc(kind: Kind, e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; e.target.value = '';
     if (!f) return;
@@ -156,7 +172,7 @@ export default function FinanceiroPage() {
         };
       });
       if (kind === 'invoice') {
-        setInv((p) => ({ ...p, projectId: pid || p.projectId, issuedTo: r.issuedTo || p.issuedTo, billedTo: r.billedTo || p.billedTo, number: r.number || p.number, issueDate: r.issueDate || p.issueDate }));
+        setInv((p) => ({ ...p, projectId: pid || p.projectId, issuedTo: companyByName(r.issuedTo) || p.issuedTo, billedTo: companyByName(r.billedTo) || p.billedTo, number: r.number || p.number, issueDate: r.issueDate || p.issueDate }));
         setLines('invoice', rows);
       } else {
         setBill((p) => ({ ...p, projectId: pid || p.projectId, number: r.number || p.number, dueDate: r.dueDate || p.dueDate }));
@@ -320,12 +336,18 @@ export default function FinanceiroPage() {
                 <input value={inv.number} onChange={(e) => setInv({ ...inv, number: e.target.value })} />
               </div>
               <div>
-                <label>Issued to</label>
-                <input value={inv.issuedTo} onChange={(e) => setInv({ ...inv, issuedTo: e.target.value })} placeholder="GLOBAL7 COMMUNICATIONS LLC" />
+                <label>Issued to (emissor)</label>
+                <select value={inv.issuedTo} onChange={(e) => setInv({ ...inv, issuedTo: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {companies.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
               </div>
               <div>
-                <label>Billed to</label>
-                <input value={inv.billedTo} onChange={(e) => setInv({ ...inv, billedTo: e.target.value })} />
+                <label>Billed to (cobrado)</label>
+                <select value={inv.billedTo} onChange={(e) => setInv({ ...inv, billedTo: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {companies.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
+                </select>
               </div>
               <div>
                 <label>Emissão</label>
