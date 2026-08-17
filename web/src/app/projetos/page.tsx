@@ -125,6 +125,27 @@ export default function ProjetosPage() {
     setEditId(p.id); setError(''); setImportNote(''); setDraftStatus(''); setShowForm(true);
   }
 
+  // Duplicar: abre o form em modo CRIAÇÃO já preenchido com os dados do projeto.
+  function duplicate(p: Project) {
+    setCode(p.code ? `${p.code}-COPIA` : '');
+    setProjectType(p.projectType || 'SPLICE');
+    setProjectSource(p.projectSource || '');
+    setClientCompanyId(p.client?.id || '');
+    setSubIds((p.subcontractors ?? []).map((s) => s.company.id));
+    setServices(
+      (p.services ?? []).length
+        ? (p.services ?? []).map((s) => ({
+            code: s.code, description: s.description, unit: s.unit || '',
+            clientValue: String(s.clientValue ?? ''), subValue: String(s.subValue ?? ''),
+          }))
+        : [emptyService()],
+    );
+    setEditId(null); // cria um novo projeto a partir da cópia
+    setError(''); setImportNote(''); setImportTarget('clientValue'); setDraftStatus('');
+    setShowForm(true);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function toggleSub(id: string) {
     setSubIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
@@ -377,6 +398,7 @@ export default function ProjetosPage() {
               {canEdit && (
                 <div className="row" style={{ gap: 8, marginTop: 10 }}>
                   <button className="btn small secondary" onClick={() => startEdit(p)}>Editar</button>
+                  <button className="btn small secondary" onClick={() => duplicate(p)}>Duplicar</button>
                 </div>
               )}
             </div>
