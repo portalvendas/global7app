@@ -73,6 +73,19 @@ model Company {
   phone     String?
   isActive  Boolean     @default(true) @map("is_active")
 
+  // ── W-9 (fornecedores/clientes US). Extraído do PDF preenchível ou manual.
+  // SSN NÃO é armazenado (decisão de privacidade); só EIN.
+  w9FileKey          String?   @map("w9_file_key")           // chave no storage (WordPress)
+  w9FileName         String?   @map("w9_file_name")
+  w9BusinessName     String?   @map("w9_business_name")      // linha 1/2 do W-9
+  w9TaxClassification String?  @map("w9_tax_classification") // individual/c_corp/s_corp/partnership/trust/llc/other
+  w9Ein              String?   @map("w9_ein")                // apenas EIN (nunca SSN)
+  w9Address          String?   @map("w9_address")
+  w9City             String?   @map("w9_city")
+  w9State            String?   @map("w9_state")
+  w9Zip              String?   @map("w9_zip")
+  w9ReceivedAt       DateTime? @map("w9_received_at")
+
   // Encaixe QBO (futuro): Vendor (subcontratada) / Customer (cliente).
   externalRef String?    @map("external_ref")
   syncStatus  SyncStatus @default(NOT_SYNCED) @map("sync_status")

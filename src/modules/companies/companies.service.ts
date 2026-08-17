@@ -1,14 +1,18 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CompanyType, Prisma } from '@prisma/client';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dtos/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { STORAGE_SERVICE, StorageService } from '../storage/storage.interface';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(STORAGE_SERVICE) private readonly storage: StorageService,
+  ) {}
 
   private isGlobal7(user: AuthUser): boolean {
     return user.companyType === CompanyType.OPERATOR;
@@ -55,6 +59,32 @@ export class CompaniesService {
     await this.ensureExists(id);
     // Soft delete.
     return this.prisma.company.update({ where: { id }, data: { deletedAt: new Date() } });
+  }
+
+  /** Anexa o PDF do W-9 (guarda no storage) e registra metadados. Extração é no cliente. */
+  async uploadW9(id: string, file: Express.Multer.File | undefined) {
+    await this.ensureExists(id);
+    if (!file) throw new BadRequestException('Arquivo (campo "file") é obrigatório');
+    const ext = (file.originalname.split('.').pop() || 'pdf').toLowerCase();
+    const saved = await this.storage.save(file.buffer, { ext, contentType: file.mimetype });
+    return this.prisma.company.update({
+      where: { id },
+      data: {
+        w9FileKey: saved.key,
+        w9FileName: file.originalname || `w9.${ext}`,
+        w9ReceivedAt: new Date(),
+      },
+    });
+  }
+
+  /** Baixa o W-9 anexado (scoped: Global 7 ou a própria empresa). */
+  async getW9(user: AuthUser, id: string) {
+    const company = await this.findOne(user, id); // valida acesso
+    if (!company.w9FileKey) throw new NotFoundException('W-9 não anexado');
+    const buffer = await this.storage.read(company.w9FileKey);
+    const name = company.w9FileName || 'w9.pdf';
+    const mimeType = name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream';
+    return { buffer, mimeType, name };
   }
 
   private async ensureExists(id: string): Promise<void> {
