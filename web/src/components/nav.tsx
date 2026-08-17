@@ -18,7 +18,7 @@ const ITEMS: Item[] = [
   { href: '/equipes', label: 'Equipes', show: (m) => isG7(m.role) || m.role === 'SUBCONTRACTOR_ADMIN' },
   { href: '/empresas', label: 'Empresas', show: (m) => isG7(m.role) },
   { href: '/acessos', label: 'Acessos', show: (m) => isG7(m.role) },
-  { href: '/financeiro', label: 'Financeiro', show: (m) => isG7(m.role) || m.company.type !== 'OPERATOR' },
+  { href: '/financeiro', label: 'Invoices & Payroll', show: (m) => isG7(m.role) || m.company.type !== 'OPERATOR' },
 ];
 
 export function Nav({ me }: { me: Me }) {

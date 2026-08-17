@@ -89,15 +89,15 @@ export default function FinanceiroPage() {
       <Nav me={me} />
       <div className="container">
         <div className="row between">
-          <h2 style={{ margin: '4px 0' }}>Financeiro</h2>
+          <h2 style={{ margin: '4px 0' }}>Invoices &amp; Payroll</h2>
           {((tab === 'receber' && g7) || (tab === 'pagar' && (g7 || isSub))) && (
             <button className="btn small" onClick={() => { setShowForm(!showForm); setError(''); }}>+ Novo</button>
           )}
         </div>
 
         <div className="tabs">
-          {showReceber && <button className={`tab ${tab === 'receber' ? 'active' : ''}`} onClick={() => { setTab('receber'); setShowForm(false); }}>A receber</button>}
-          {showPagar && <button className={`tab ${tab === 'pagar' ? 'active' : ''}`} onClick={() => { setTab('pagar'); setShowForm(false); }}>A pagar</button>}
+          {showReceber && <button className={`tab ${tab === 'receber' ? 'active' : ''}`} onClick={() => { setTab('receber'); setShowForm(false); }}>Invoices</button>}
+          {showPagar && <button className={`tab ${tab === 'pagar' ? 'active' : ''}`} onClick={() => { setTab('pagar'); setShowForm(false); }}>Payroll</button>}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -105,7 +105,7 @@ export default function FinanceiroPage() {
         {/* Formulários */}
         {showForm && tab === 'receber' && g7 && (
           <div className="card">
-            <h3>Nova fatura (a receber)</h3>
+            <h3>Novo invoice</h3>
             <label>Projeto</label>
             <select value={inv.projectId} onChange={(e) => setInv({ ...inv, projectId: e.target.value })}>
               <option value="">Selecione…</option>
@@ -127,7 +127,7 @@ export default function FinanceiroPage() {
         )}
         {showForm && tab === 'pagar' && (g7 || isSub) && (
           <div className="card">
-            <h3>Nova conta (a pagar)</h3>
+            <h3>Novo payroll</h3>
             {g7 && (
               <>
                 <label>Subcontratada</label>
@@ -159,7 +159,7 @@ export default function FinanceiroPage() {
 
         {/* Listas */}
         {tab === 'receber' && (
-          invoices.length === 0 ? <div className="center">Nenhuma fatura.</div> :
+          invoices.length === 0 ? <div className="center">Nenhum invoice.</div> :
           invoices.map((i) => (
             <div className="card" key={i.id}>
               <div className="row between">
@@ -180,7 +180,7 @@ export default function FinanceiroPage() {
           ))
         )}
         {tab === 'pagar' && (
-          bills.length === 0 ? <div className="center">Nenhuma conta.</div> :
+          bills.length === 0 ? <div className="center">Nenhum payroll.</div> :
           bills.map((b) => (
             <div className="card" key={b.id}>
               <div className="row between">
