@@ -97,7 +97,7 @@ model Company {
   users           User[]
   teams           Team[]    @relation("SubcontractorTeams")
   clientProjects  Project[] @relation("ClientProjects")
-  subProjects     Project[] @relation("SubcontractorProjects")
+  subProjects     ProjectSubcontractor[] @relation("SubcontractorProjects")
   invoices        Invoice[] // como cliente
   bills           Bill[]    // como subcontratada
 
@@ -143,7 +143,6 @@ model Team {
 
   company     Company           @relation("SubcontractorTeams", fields: [subcontractorCompanyId], references: [id], onDelete: Cascade)
   memberships TeamMembership[]
-  projects    Project[]
   dailies     DailyProduction[]
 
   @@index([subcontractorCompanyId])
@@ -165,16 +164,12 @@ model TeamMembership {
 
 // ─── Projetos ────────────────────────────────────────────────
 model Project {
-  id            String   @id @default(cuid())
-  code          String   @unique
-  description   String
-  contractValue Decimal  @default(0) @map("contract_value") @db.Decimal(14, 2)
-  currency      String   @default("USD") @db.VarChar(3)
-  status        String   @default("ACTIVE")
+  id       String @id @default(cuid())
+  code     String @unique
+  currency String @default("USD") @db.VarChar(3)
+  status   String @default("ACTIVE")
 
-  clientCompanyId        String  @map("client_company_id")
-  subcontractorCompanyId String? @map("subcontractor_company_id")
-  teamId                 String? @map("team_id")
+  clientCompanyId String @map("client_company_id")
 
   startDate DateTime? @map("start_date")
   endDate   DateTime? @map("end_date")
@@ -182,16 +177,48 @@ model Project {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  client        Company           @relation("ClientProjects", fields: [clientCompanyId], references: [id])
-  subcontractor Company?          @relation("SubcontractorProjects", fields: [subcontractorCompanyId], references: [id])
-  team          Team?             @relation(fields: [teamId], references: [id])
-  invoices      Invoice[]
-  bills         Bill[]
-  dailies       DailyProduction[]
+  client         Company                @relation("ClientProjects", fields: [clientCompanyId], references: [id])
+  subcontractors ProjectSubcontractor[]
+  services       ProjectService[]
+  invoices       Invoice[]
+  bills          Bill[]
+  dailies        DailyProduction[]
 
   @@index([clientCompanyId])
-  @@index([subcontractorCompanyId])
   @@map("projects")
+}
+
+// Vínculo N-para-N: um projeto pode ter várias subcontratadas (opcional).
+model ProjectSubcontractor {
+  id        String @id @default(cuid())
+  projectId String @map("project_id")
+  companyId String @map("company_id")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  company Company @relation("SubcontractorProjects", fields: [companyId], references: [id])
+
+  @@unique([projectId, companyId])
+  @@index([companyId])
+  @@map("project_subcontractors")
+}
+
+// Linhas de serviço/preço do projeto (tabela FS01, Composite, etc.).
+// clientValue = valor cheio (recebido do cliente); subValue = valor de repasse (pago ao sub).
+model ProjectService {
+  id          String  @id @default(cuid())
+  projectId   String  @map("project_id")
+  code        String
+  description String
+  unit        String?
+  clientValue Decimal @default(0) @map("client_value") @db.Decimal(14, 2)
+  subValue    Decimal @default(0) @map("sub_value") @db.Decimal(14, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@map("project_services")
 }
 
 // ─── Financeiro (fase 4; tabelas já criadas) ─────────────────

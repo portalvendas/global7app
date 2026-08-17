@@ -6,26 +6,43 @@ import { Nav } from '@/components/nav';
 import { money } from '@/lib/format';
 import { isG7, useMe } from '@/lib/session';
 
-interface Ref { id: string; name?: string; code?: string }
+interface Ref { id: string; name?: string }
+interface ServiceRow {
+  id?: string; code: string; description: string; unit: string;
+  clientValue: string; subValue: string;
+}
 interface Project {
-  id: string; code: string; description: string; contractValue: string | number; currency: string; status: string;
-  client?: Ref | null; subcontractor?: Ref | null; team?: Ref | null;
+  id: string; code: string; currency: string; status: string;
+  client?: Ref | null;
+  subcontractors?: { company: Ref }[];
+  services?: { id: string; code: string; description: string; unit?: string | null; clientValue: string | number; subValue: string | number }[];
 }
 interface Company { id: string; name: string; type: 'OPERATOR' | 'SUBCONTRACTOR' | 'CLIENT' }
-interface Team { id: string; name: string }
 
-const EMPTY = { code: '', description: '', contractValue: '', clientCompanyId: '', subcontractorCompanyId: '', teamId: '' };
+// Linha vazia de serviço
+const emptyService = (): ServiceRow => ({ code: '', description: '', unit: '', clientValue: '', subValue: '' });
+
+// Coluna-alvo ao importar PDF: valor cheio (recebido do cliente) ou repasse (pago ao sub).
+type Target = 'clientValue' | 'subValue';
+
+interface ParsedLine { code: string; description: string; unit: string; value: number }
 
 export default function ProjetosPage() {
   const { me, loading } = useMe();
   const [rows, setRows] = useState<Project[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [form, setForm] = useState<typeof EMPTY>(EMPTY);
+  const [code, setCode] = useState('');
+  const [clientCompanyId, setClientCompanyId] = useState('');
+  const [subIds, setSubIds] = useState<string[]>([]);
+  const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
   const [editId, setEditId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Import PDF
+  const [importTarget, setImportTarget] = useState<Target>('clientValue');
+  const [importing, setImporting] = useState(false);
+  const [importNote, setImportNote] = useState('');
 
   const load = useCallback(() => {
     api<{ items: Project[] }>('/projects?pageSize=100').then((r) => setRows(r.items)).catch(() => {});
@@ -34,31 +51,109 @@ export default function ProjetosPage() {
     if (!me) return;
     load();
     api<{ items: Company[] }>('/companies?pageSize=100').then((r) => setCompanies(r.items)).catch(() => {});
-    api<{ items: Team[] }>('/teams?pageSize=100').then((r) => setTeams(r.items)).catch(() => {});
   }, [me, load]);
 
   const canEdit = me ? isG7(me.role) : false;
   const clients = companies.filter((c) => c.type === 'CLIENT');
   const subs = companies.filter((c) => c.type === 'SUBCONTRACTOR');
 
-  function startCreate() { setForm(EMPTY); setEditId(null); setError(''); setShowForm(true); }
+  function resetForm() {
+    setCode(''); setClientCompanyId(''); setSubIds([]); setServices([emptyService()]);
+    setError(''); setImportNote(''); setImportTarget('clientValue');
+  }
+  function startCreate() { resetForm(); setEditId(null); setShowForm(true); }
   function startEdit(p: Project) {
-    setForm({
-      code: p.code, description: p.description, contractValue: String(p.contractValue ?? ''),
-      clientCompanyId: p.client?.id || '', subcontractorCompanyId: p.subcontractor?.id || '', teamId: p.team?.id || '',
+    setCode(p.code);
+    setClientCompanyId(p.client?.id || '');
+    setSubIds((p.subcontractors ?? []).map((s) => s.company.id));
+    setServices(
+      (p.services ?? []).length
+        ? (p.services ?? []).map((s) => ({
+            id: s.id, code: s.code, description: s.description, unit: s.unit || '',
+            clientValue: String(s.clientValue ?? ''), subValue: String(s.subValue ?? ''),
+          }))
+        : [emptyService()],
+    );
+    setEditId(p.id); setError(''); setImportNote(''); setShowForm(true);
+  }
+
+  function toggleSub(id: string) {
+    setSubIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function updateService(i: number, patch: Partial<ServiceRow>) {
+    setServices((prev) => prev.map((s, idx) => (idx === i ? { ...s, ...patch } : s)));
+  }
+  function addService() { setServices((prev) => [...prev, emptyService()]); }
+  function removeService(i: number) {
+    setServices((prev) => (prev.length <= 1 ? [emptyService()] : prev.filter((_, idx) => idx !== i)));
+  }
+
+  // Importa PDF de tabela de preços → mescla nas linhas por código, na coluna escolhida.
+  async function onImportPdf(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    setImporting(true); setImportNote('Lendo o PDF…'); setError('');
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      const res = await api<{ lines: ParsedLine[]; note: string }>('/projects/parse-rate-table', {
+        method: 'POST', body: fd, isForm: true,
+      });
+      setImportNote(res.note || '');
+      mergeParsed(res.lines || [], importTarget);
+    } catch (err) {
+      setImportNote(''); setError(err instanceof ApiError ? err.message : 'Falha ao ler o PDF');
+    } finally { setImporting(false); }
+  }
+
+  function mergeParsed(lines: ParsedLine[], target: Target) {
+    if (!lines.length) return;
+    setServices((prev) => {
+      // remove a linha vazia inicial se ainda intocada
+      const base = prev.filter((s) => s.code || s.description || s.clientValue || s.subValue);
+      const byCode = new Map(base.map((s) => [s.code.trim().toLowerCase(), s]));
+      const next = [...base];
+      for (const ln of lines) {
+        const key = ln.code.trim().toLowerCase();
+        const val = String(ln.value ?? '');
+        const existing = key ? byCode.get(key) : undefined;
+        if (existing) {
+          existing[target] = val;
+          if (!existing.description && ln.description) existing.description = ln.description;
+          if (!existing.unit && ln.unit) existing.unit = ln.unit;
+        } else {
+          const row: ServiceRow = {
+            code: ln.code, description: ln.description, unit: ln.unit,
+            clientValue: target === 'clientValue' ? val : '',
+            subValue: target === 'subValue' ? val : '',
+          };
+          if (key) byCode.set(key, row);
+          next.push(row);
+        }
+      }
+      return next.length ? next : [emptyService()];
     });
-    setEditId(p.id); setError(''); setShowForm(true);
   }
 
   async function save() {
-    if (!form.code.trim()) { setError('Informe o código'); return; }
-    if (!form.description.trim()) { setError('Informe a descrição'); return; }
-    if (!form.clientCompanyId) { setError('Selecione o cliente'); return; }
+    if (!code.trim()) { setError('Informe o código do projeto'); return; }
+    if (!clientCompanyId) { setError('Selecione o contratante (cliente)'); return; }
+    const cleaned = services
+      .filter((s) => s.code.trim() || s.description.trim() || s.clientValue || s.subValue)
+      .map((s) => ({
+        code: s.code.trim(),
+        description: s.description.trim(),
+        unit: s.unit.trim() || undefined,
+        clientValue: Number(s.clientValue || 0),
+        subValue: Number(s.subValue || 0),
+      }));
+    if (cleaned.some((s) => !s.code)) { setError('Toda linha de serviço precisa de um código'); return; }
     setBusy(true); setError('');
     const body: Record<string, unknown> = {
-      code: form.code.trim(), description: form.description.trim(),
-      contractValue: Number(form.contractValue || 0), clientCompanyId: form.clientCompanyId,
-      subcontractorCompanyId: form.subcontractorCompanyId || undefined, teamId: form.teamId || undefined,
+      code: code.trim(),
+      clientCompanyId,
+      subcontractorCompanyIds: subIds,
+      services: cleaned,
     };
     try {
       if (editId) await api(`/projects/${editId}`, { method: 'PATCH', body });
@@ -67,6 +162,12 @@ export default function ProjetosPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao salvar');
     } finally { setBusy(false); }
+  }
+
+  function projectTotals(p: Project) {
+    let cheio = 0; let repasse = 0;
+    for (const s of p.services ?? []) { cheio += Number(s.clientValue || 0); repasse += Number(s.subValue || 0); }
+    return { cheio, repasse };
   }
 
   if (loading || !me) return <div className="center">Carregando…</div>;
@@ -84,27 +185,94 @@ export default function ProjetosPage() {
           <div className="card">
             <h3>{editId ? 'Editar projeto' : 'Novo projeto'}</h3>
             {error && <div className="error">{error}</div>}
-            <label>Código</label>
-            <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="ex.: PRJ-001" />
-            <label>Descrição</label>
-            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <label>Valor do contrato (USD)</label>
-            <input type="number" inputMode="decimal" value={form.contractValue} onChange={(e) => setForm({ ...form, contractValue: e.target.value })} />
-            <label>Cliente</label>
-            <select value={form.clientCompanyId} onChange={(e) => setForm({ ...form, clientCompanyId: e.target.value })}>
+
+            <label>Código do projeto</label>
+            <input value={code} onChange={(e) => setCode(e.target.value)} placeholder="ex.: PRJ-001" />
+
+            <label>Contratante (cliente)</label>
+            <select value={clientCompanyId} onChange={(e) => setClientCompanyId(e.target.value)}>
               <option value="">Selecione…</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <label>Subcontratada (opcional)</label>
-            <select value={form.subcontractorCompanyId} onChange={(e) => setForm({ ...form, subcontractorCompanyId: e.target.value })}>
-              <option value="">—</option>
-              {subs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <label>Equipe (opcional)</label>
-            <select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })}>
-              <option value="">—</option>
-              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+
+            <label>Subcontratadas (opcional)</label>
+            {subs.length === 0 ? (
+              <div className="muted">Nenhuma subcontratada cadastrada.</div>
+            ) : (
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                {subs.map((c) => {
+                  const on = subIds.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      className={`btn small ${on ? '' : 'secondary'}`}
+                      style={{ width: 'auto' }}
+                      onClick={() => toggleSub(c.id)}
+                    >
+                      {on ? '✓ ' : ''}{c.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 4px' }} />
+            <div className="row between" style={{ alignItems: 'center' }}>
+              <h3 style={{ margin: '8px 0' }}>Linhas de serviço</h3>
+              <button type="button" className="btn small secondary" style={{ width: 'auto' }} onClick={addService}>+ Linha</button>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Valor cheio = recebido do cliente. Valor de repasse = pago ao subcontratado.
+            </p>
+
+            {/* Importação por PDF */}
+            <div className="card" style={{ background: 'var(--panel2)', padding: 12 }}>
+              <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className="muted">Importar tabela (PDF) para a coluna:</span>
+                <select value={importTarget} onChange={(e) => setImportTarget(e.target.value as Target)} style={{ width: 'auto' }}>
+                  <option value="clientValue">Valor cheio</option>
+                  <option value="subValue">Valor de repasse</option>
+                </select>
+                <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer', margin: 0 }}>
+                  {importing ? 'Lendo…' : '📎 Anexar PDF'}
+                  <input type="file" accept="application/pdf" hidden disabled={importing} onChange={onImportPdf} />
+                </label>
+              </div>
+              {importNote && <div className="muted" style={{ marginTop: 8 }}>{importNote}</div>}
+            </div>
+
+            {services.map((s, i) => (
+              <div key={i} className="card" style={{ padding: 12, marginTop: 10 }}>
+                <div className="row between" style={{ alignItems: 'center' }}>
+                  <strong>Item {i + 1}</strong>
+                  <button type="button" className="btn small danger" style={{ width: 'auto', padding: '2px 10px' }} onClick={() => removeService(i)}>Remover</button>
+                </div>
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1 1 90px' }}>
+                    <label>Código</label>
+                    <input value={s.code} onChange={(e) => updateService(i, { code: e.target.value })} placeholder="FS01" />
+                  </div>
+                  <div style={{ flex: '1 1 120px' }}>
+                    <label>Unidade</label>
+                    <input value={s.unit} onChange={(e) => updateService(i, { unit: e.target.value })} placeholder="Per Splice / FT" />
+                  </div>
+                </div>
+                <label>Descrição</label>
+                <input value={s.description} onChange={(e) => updateService(i, { description: e.target.value })} />
+                <div className="row" style={{ gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label>Valor cheio (cliente)</label>
+                    <input type="number" inputMode="decimal" value={s.clientValue} onChange={(e) => updateService(i, { clientValue: e.target.value })} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label>Valor de repasse (sub)</label>
+                    <input type="number" inputMode="decimal" value={s.subValue} onChange={(e) => updateService(i, { subValue: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+            ))}
+
             <div className="stack" style={{ marginTop: 16 }}>
               <button className="btn" disabled={busy} onClick={save}>{busy ? 'Salvando…' : 'Salvar'}</button>
               <button className="btn secondary" onClick={() => setShowForm(false)}>Cancelar</button>
@@ -114,23 +282,32 @@ export default function ProjetosPage() {
 
         {rows.length === 0 ? (
           <div className="center">Nenhum projeto.</div>
-        ) : rows.map((p) => (
-          <div className="card" key={p.id}>
-            <div className="row between">
-              <h3>{p.code}</h3>
-              <span style={{ fontWeight: 700 }}>{money(p.contractValue)}</span>
-            </div>
-            <div className="muted">{p.description}</div>
-            <div className="muted" style={{ marginTop: 4 }}>
-              Cliente: {p.client?.name || '—'} · Subcontratada: {p.subcontractor?.name || '—'} · Equipe: {p.team?.name || '—'}
-            </div>
-            {canEdit && (
-              <div className="row" style={{ gap: 8, marginTop: 10 }}>
-                <button className="btn small secondary" onClick={() => startEdit(p)}>Editar</button>
+        ) : rows.map((p) => {
+          const t = projectTotals(p);
+          const subNames = (p.subcontractors ?? []).map((s) => s.company.name);
+          return (
+            <div className="card" key={p.id}>
+              <div className="row between">
+                <h3>{p.code}</h3>
+                <span style={{ fontWeight: 700 }}>{money(t.cheio)}</span>
               </div>
-            )}
-          </div>
-        ))}
+              <div className="muted">
+                Contratante: {p.client?.name || '—'} · {(p.services ?? []).length} serviço(s)
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Subcontratadas: {subNames.length ? subNames.join(', ') : '—'}
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Repasse total: {money(t.repasse)}
+              </div>
+              {canEdit && (
+                <div className="row" style={{ gap: 8, marginTop: 10 }}>
+                  <button className="btn small secondary" onClick={() => startEdit(p)}>Editar</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </>
   );

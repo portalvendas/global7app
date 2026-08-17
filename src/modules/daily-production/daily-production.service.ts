@@ -48,10 +48,6 @@ export class DailyProductionService {
 
     await this.assertCanWriteForTeam(user, dto.teamId, team.subcontractorCompanyId);
 
-    // Coerência: se o projeto está amarrado a uma equipe, precisa ser a mesma.
-    if (project.teamId && project.teamId !== dto.teamId) {
-      throw new BadRequestException('Este projeto não pertence à equipe informada');
-    }
 
     const existing = await this.prisma.dailyProduction.findUnique({
       where: { clientUuid: dto.clientUuid },
@@ -172,7 +168,7 @@ export class DailyProductionService {
     const daily = await this.prisma.dailyProduction.findFirst({
       where: { id, ...this.scopeFor(user) },
       include: {
-        project: { select: { id: true, code: true, description: true } },
+        project: { select: { id: true, code: true } },
         team: { select: { id: true, name: true } },
         author: { select: { id: true, name: true } },
         reviewedBy: { select: { id: true, name: true } },
