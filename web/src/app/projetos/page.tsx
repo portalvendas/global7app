@@ -23,6 +23,18 @@ interface Company { id: string; name: string; type: 'OPERATOR' | 'SUBCONTRACTOR'
 // Linha vazia de serviço
 const emptyService = (): ServiceRow => ({ code: '', description: '', unit: '', clientValue: '', subValue: '' });
 
+// Autosave de rascunho de projeto NOVO (localStorage).
+const DRAFT_KEY = 'g7_projeto_draft';
+interface Draft {
+  code: string; projectType: ProjectType; projectSource: string;
+  clientCompanyId: string; subIds: string[]; services: ServiceRow[];
+}
+function loadDraft(): Draft | null {
+  try { const raw = localStorage.getItem(DRAFT_KEY); return raw ? (JSON.parse(raw) as Draft) : null; } catch { return null; }
+}
+function saveDraft(d: Draft) { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch { /* quota/priv */ } }
+function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch { /* noop */ } }
+
 // Coluna-alvo ao importar PDF: valor cheio (recebido do cliente) ou repasse (pago ao sub).
 type Target = 'clientValue' | 'subValue';
 
@@ -47,6 +59,8 @@ export default function ProjetosPage() {
   const [importTarget, setImportTarget] = useState<Target>('clientValue');
   const [importing, setImporting] = useState(false);
   const [importNote, setImportNote] = useState('');
+  // Autosave (rascunho de projeto novo)
+  const [draftStatus, setDraftStatus] = useState('');
 
   const load = useCallback(() => {
     setListError('');
@@ -60,6 +74,19 @@ export default function ProjetosPage() {
     api<{ items: Company[] }>('/companies?pageSize=100').then((r) => setCompanies(r.items)).catch(() => {});
   }, [me, load]);
 
+  // Autosave: salva rascunho do projeto NOVO enquanto o form está aberto (debounce).
+  useEffect(() => {
+    if (!showForm || editId) return; // só p/ criação
+    const hasContent = !!(code || projectSource || clientCompanyId || subIds.length ||
+      services.some((s) => s.code || s.description || s.clientValue || s.subValue));
+    if (!hasContent) return;
+    const t = setTimeout(() => {
+      saveDraft({ code, projectType, projectSource, clientCompanyId, subIds, services });
+      setDraftStatus('salvo');
+    }, 600);
+    return () => clearTimeout(t);
+  }, [showForm, editId, code, projectType, projectSource, clientCompanyId, subIds, services]);
+
   const canEdit = me ? isG7(me.role) : false;
   const clients = companies.filter((c) => c.type === 'CLIENT');
   const subs = companies.filter((c) => c.type === 'SUBCONTRACTOR');
@@ -68,7 +95,20 @@ export default function ProjetosPage() {
     setCode(''); setProjectType('SPLICE'); setProjectSource(''); setClientCompanyId(''); setSubIds([]); setServices([emptyService()]);
     setError(''); setImportNote(''); setImportTarget('clientValue');
   }
-  function startCreate() { resetForm(); setEditId(null); setShowForm(true); }
+  function applyDraft(d: Draft) {
+    setCode(d.code || ''); setProjectType(d.projectType || 'SPLICE'); setProjectSource(d.projectSource || '');
+    setClientCompanyId(d.clientCompanyId || ''); setSubIds(d.subIds || []);
+    setServices(d.services && d.services.length ? d.services : [emptyService()]);
+    setError(''); setImportNote(''); setImportTarget('clientValue');
+  }
+  function startCreate() {
+    const draft = loadDraft();
+    setEditId(null);
+    if (draft) { applyDraft(draft); setDraftStatus('recuperado'); }
+    else { resetForm(); setDraftStatus(''); }
+    setShowForm(true);
+  }
+  function discardDraft() { clearDraft(); resetForm(); setDraftStatus(''); }
   function startEdit(p: Project) {
     setCode(p.code);
     setProjectType(p.projectType || 'SPLICE');
@@ -83,7 +123,7 @@ export default function ProjetosPage() {
           }))
         : [emptyService()],
     );
-    setEditId(p.id); setError(''); setImportNote(''); setShowForm(true);
+    setEditId(p.id); setError(''); setImportNote(''); setDraftStatus(''); setShowForm(true);
   }
 
   function toggleSub(id: string) {
@@ -169,6 +209,7 @@ export default function ProjetosPage() {
     try {
       if (editId) await api(`/projects/${editId}`, { method: 'PATCH', body });
       else await api('/projects', { method: 'POST', body });
+      clearDraft(); setDraftStatus('');
       setShowForm(false); load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Falha ao salvar');
@@ -194,7 +235,17 @@ export default function ProjetosPage() {
 
         {showForm && canEdit && (
           <div className="card">
-            <h3>{editId ? 'Editar projeto' : 'Novo projeto'}</h3>
+            <div className="row between" style={{ alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>{editId ? 'Editar projeto' : 'Novo projeto'}</h3>
+              {!editId && draftStatus && (
+                <span className="row" style={{ gap: 8 }}>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {draftStatus === 'recuperado' ? '↩ rascunho recuperado' : '✓ rascunho salvo'}
+                  </span>
+                  <button type="button" className="btn small secondary" style={{ width: 'auto', padding: '2px 8px' }} onClick={discardDraft}>Descartar</button>
+                </span>
+              )}
+            </div>
             {error && <div className="error">{error}</div>}
 
             <div className="form-grid">
