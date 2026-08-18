@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { Nav } from '@/components/nav';
 import { money, dateBR } from '@/lib/format';
@@ -39,7 +39,7 @@ function addDays(iso: string, days: number): string {
 
 export default function FinanceiroPage() {
   const { me, loading } = useMe();
-  const [tab, setTab] = useState<'receber' | 'pagar'>('receber');
+  const [tab, setTab] = useState<'receber' | 'pagar' | 'lucro'>('receber');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -62,13 +62,17 @@ export default function FinanceiroPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const billDue = bill.issueDate && termDays(bill.paymentTerms) != null ? addDays(bill.issueDate, termDays(bill.paymentTerms) as number) : '';
 
+  // Lucratividade: preços de repasse por projeto (tabela do projeto) + projeto aberto no detalhe.
+  const [svcByProject, setSvcByProject] = useState<Record<string, Svc[]>>({});
+  const [openProj, setOpenProj] = useState<string | null>(null);
+
   const g7 = me ? isG7(me.role) : false;
   const isClient = me?.company.type === 'CLIENT';
   const isSub = me?.company.type === 'SUBCONTRACTOR';
 
   const load = useCallback(() => {
-    api<{ items: Invoice[] }>('/invoices?pageSize=100').then((r) => setInvoices(r.items)).catch(() => {});
-    api<{ items: Bill[] }>('/bills?pageSize=100').then((r) => setBills(r.items)).catch(() => {});
+    api<{ items: Invoice[] }>('/invoices?pageSize=1000').then((r) => setInvoices(r.items)).catch(() => {});
+    api<{ items: Bill[] }>('/bills?pageSize=1000').then((r) => setBills(r.items)).catch(() => {});
   }, []);
   useEffect(() => {
     if (!me) return;
@@ -88,6 +92,59 @@ export default function FinanceiroPage() {
     if (!bill.projectId) { setBillSvc([]); return; }
     api<{ services?: Svc[] }>(`/projects/${bill.projectId}`).then((p) => setBillSvc(p.services || [])).catch(() => setBillSvc([]));
   }, [bill.projectId]);
+
+  // Ao abrir Lucratividade, busca a tabela de preços de cada projeto que tem invoice (repasse teórico).
+  useEffect(() => {
+    if (tab !== 'lucro' || !g7) return;
+    const ids = Array.from(new Set(invoices.map((i) => i.project?.id).filter(Boolean))) as string[];
+    const missing = ids.filter((id) => !(id in svcByProject));
+    if (!missing.length) return;
+    missing.forEach((id) => {
+      api<{ services?: Svc[] }>(`/projects/${id}`)
+        .then((p) => setSvcByProject((prev) => ({ ...prev, [id]: p.services || [] })))
+        .catch(() => setSvcByProject((prev) => ({ ...prev, [id]: [] })));
+    });
+  }, [tab, g7, invoices, svcByProject]);
+
+  // Apuração por projeto: Faturado (cheio) · Repasse teórico (tabela) · Repasse pago (payrolls) · Resultado.
+  const profit = useMemo(() => {
+    type InvRow = { id: string; number?: string | null; cheio: number; repasse: number; miss: boolean };
+    type Agg = { projectId: string; code: string; faturado: number; repasseTeorico: number; repassePago: number; invs: InvRow[]; bills: Bill[]; anyMiss: boolean };
+    const map = new Map<string, Agg>();
+    const getE = (pid: string, code?: string): Agg => {
+      let e = map.get(pid);
+      if (!e) { e = { projectId: pid, code: code || '—', faturado: 0, repasseTeorico: 0, repassePago: 0, invs: [], bills: [], anyMiss: false }; map.set(pid, e); }
+      return e;
+    };
+    for (const i of invoices) {
+      const pid = i.project?.id; if (!pid) continue;
+      const e = getE(pid, i.project?.code);
+      const cheio = num(i.amount);
+      const price: Record<string, number> = {};
+      for (const s of svcByProject[pid] || []) price[norm(s.code)] = num(s.subValue);
+      let rep = 0; let miss = false;
+      for (const l of i.lines || []) {
+        const sv = price[norm(l.code)];
+        if (sv == null) miss = true; else rep += num(l.quantity) * sv;
+      }
+      rep = r2(rep);
+      e.faturado = r2(e.faturado + cheio);
+      e.repasseTeorico = r2(e.repasseTeorico + rep);
+      if (miss) e.anyMiss = true;
+      e.invs.push({ id: i.id, number: i.number, cheio, repasse: rep, miss });
+    }
+    for (const b of bills) {
+      const pid = b.project?.id; if (!pid) continue;
+      const e = getE(pid, b.project?.code);
+      e.repassePago = r2(e.repassePago + num(b.amount));
+      e.bills.push(b);
+    }
+    const rows = Array.from(map.values()).sort((a, b) => a.code.localeCompare(b.code));
+    const tot = rows.reduce((t, e) => ({
+      faturado: r2(t.faturado + e.faturado), repasseTeorico: r2(t.repasseTeorico + e.repasseTeorico), repassePago: r2(t.repassePago + e.repassePago),
+    }), { faturado: 0, repasseTeorico: 0, repassePago: 0 });
+    return { rows, tot };
+  }, [invoices, bills, svcByProject]);
 
   // Preenche taxas vazias quando os itens do projeto chegam (não sobrescreve edições).
   useEffect(() => { if (invSvc.length) setInvLines((p) => fillRates(p, invSvc, 'invoice')); }, [invSvc]);
@@ -343,6 +400,7 @@ export default function FinanceiroPage() {
         <div className="tabs">
           {showReceber && <button className={`tab ${tab === 'receber' ? 'active' : ''}`} onClick={() => { setTab('receber'); setShowForm(false); setImportNote(''); }}>Invoices</button>}
           {showPagar && <button className={`tab ${tab === 'pagar' ? 'active' : ''}`} onClick={() => { setTab('pagar'); setShowForm(false); setImportNote(''); }}>Payroll</button>}
+          {g7 && <button className={`tab ${tab === 'lucro' ? 'active' : ''}`} onClick={() => { setTab('lucro'); setShowForm(false); setImportNote(''); }}>Lucratividade</button>}
         </div>
 
         {error && <div className="error">{error}</div>}
@@ -534,6 +592,81 @@ export default function FinanceiroPage() {
             </div>
           ))}
           </div>
+        )}
+
+        {tab === 'lucro' && g7 && (
+          profit.rows.length === 0 ? <div className="center">Sem invoices/payrolls para apurar.</div> :
+          <>
+            <p className="muted" style={{ marginTop: 0 }}>Resultado = Faturado (valor cheio das Invoices) − Repasse. Repasse teórico vem da tabela de preços do projeto (valor de repasse por item); Repasse pago vem dos Payrolls lançados. Clique num projeto para ver as Invoices e Payrolls.</p>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                <thead>
+                  <tr style={{ textAlign: 'right', color: 'var(--muted)', fontSize: 13 }}>
+                    <th style={{ textAlign: 'left', padding: '8px 10px' }}>Projeto</th>
+                    <th style={{ padding: '8px 10px' }}>Faturado</th>
+                    <th style={{ padding: '8px 10px' }}>Repasse (tabela)</th>
+                    <th style={{ padding: '8px 10px' }}>Result. (tabela)</th>
+                    <th style={{ padding: '8px 10px' }}>Margem</th>
+                    <th style={{ padding: '8px 10px' }}>Repasse (pago)</th>
+                    <th style={{ padding: '8px 10px' }}>Result. (pago)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profit.rows.map((e) => {
+                    const resT = r2(e.faturado - e.repasseTeorico);
+                    const resP = r2(e.faturado - e.repassePago);
+                    const marg = e.faturado ? Math.round((resT / e.faturado) * 1000) / 10 : 0;
+                    const open = openProj === e.projectId;
+                    return (
+                      <Fragment key={e.projectId}>
+                        <tr onClick={() => setOpenProj(open ? null : e.projectId)} style={{ cursor: 'pointer', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+                          <td style={{ textAlign: 'left', padding: '10px', fontWeight: 600 }}>{open ? '▾' : '▸'} {e.code}{e.anyMiss ? ' *' : ''}</td>
+                          <td style={{ padding: '10px' }}>{money(e.faturado)}</td>
+                          <td style={{ padding: '10px' }}>{money(e.repasseTeorico)}</td>
+                          <td style={{ padding: '10px', color: resT >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>{money(resT)}</td>
+                          <td style={{ padding: '10px', color: marg >= 0 ? '#4ade80' : '#f87171' }}>{marg}%</td>
+                          <td style={{ padding: '10px' }}>{money(e.repassePago)}</td>
+                          <td style={{ padding: '10px', color: resP >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>{money(resP)}</td>
+                        </tr>
+                        {open && (
+                          <tr>
+                            <td colSpan={7} style={{ padding: '0 10px 12px', background: 'var(--panel2)' }}>
+                              <div style={{ padding: '8px 0' }}>
+                                <div className="muted" style={{ fontWeight: 600, margin: '4px 0' }}>Invoices</div>
+                                {e.invs.length === 0 ? <div className="muted">— nenhuma —</div> : e.invs.map((iv) => (
+                                  <div key={iv.id} className="row between" style={{ padding: '3px 0', fontSize: 14 }}>
+                                    <span className="muted">Invoice {iv.number || iv.id.slice(-6)}{iv.miss ? ' *' : ''}</span>
+                                    <span>Cheio {money(iv.cheio)} · Repasse {money(iv.repasse)} · <b style={{ color: (iv.cheio - iv.repasse) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(iv.cheio - iv.repasse))}</b></span>
+                                  </div>
+                                ))}
+                                <div className="muted" style={{ fontWeight: 600, margin: '10px 0 4px' }}>Payrolls</div>
+                                {e.bills.length === 0 ? <div className="muted">— nenhum —</div> : e.bills.map((b) => (
+                                  <div key={b.id} className="row between" style={{ padding: '3px 0', fontSize: 14 }}>
+                                    <span className="muted">{b.team?.name || b.subcontractor?.name || 'Sub'}{b.number ? ` · ${b.number}` : ''}</span>
+                                    <span>{money(b.amount)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  <tr style={{ borderTop: '2px solid var(--border)', textAlign: 'right', fontWeight: 700 }}>
+                    <td style={{ textAlign: 'left', padding: '10px' }}>Total</td>
+                    <td style={{ padding: '10px' }}>{money(profit.tot.faturado)}</td>
+                    <td style={{ padding: '10px' }}>{money(profit.tot.repasseTeorico)}</td>
+                    <td style={{ padding: '10px', color: (profit.tot.faturado - profit.tot.repasseTeorico) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(profit.tot.faturado - profit.tot.repasseTeorico))}</td>
+                    <td style={{ padding: '10px' }}>{profit.tot.faturado ? Math.round(((profit.tot.faturado - profit.tot.repasseTeorico) / profit.tot.faturado) * 1000) / 10 : 0}%</td>
+                    <td style={{ padding: '10px' }}>{money(profit.tot.repassePago)}</td>
+                    <td style={{ padding: '10px', color: (profit.tot.faturado - profit.tot.repassePago) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(profit.tot.faturado - profit.tot.repassePago))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="muted" style={{ fontSize: 13 }}>* Algum item da Invoice não tem preço de repasse cadastrado na tabela do projeto — o repasse teórico desse projeto está incompleto. Cadastre o item no projeto para apurar corretamente.</p>
+          </>
         )}
       </div>
     </>
