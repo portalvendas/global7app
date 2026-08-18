@@ -4,6 +4,7 @@ import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { PaginationDto } from '../../common/dtos/pagination.dto';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateTeamDto } from './dto/create-team.dto';
+import { UpdateTeamDto } from './dto/update-team.dto';
 
 @Injectable()
 export class TeamsService {
@@ -56,5 +57,16 @@ export class TeamsService {
   async addMember(user: AuthUser, teamId: string, userId: string) {
     await this.findOne(user, teamId); // valida acesso
     return this.prisma.teamMembership.create({ data: { teamId, userId } });
+  }
+
+  async update(user: AuthUser, id: string, dto: UpdateTeamDto) {
+    await this.findOne(user, id); // valida acesso
+    return this.prisma.team.update({ where: { id }, data: { name: dto.name, isActive: dto.isActive } });
+  }
+
+  async removeMember(user: AuthUser, teamId: string, userId: string) {
+    await this.findOne(user, teamId); // valida acesso
+    await this.prisma.teamMembership.deleteMany({ where: { teamId, userId } });
+    return { ok: true };
   }
 }
