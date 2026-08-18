@@ -20,6 +20,17 @@ export class BillsService {
     return u.companyType === CompanyType.OPERATOR;
   }
 
+  /** Vencimento = data do payroll + Nº de dias dos termos (NET21/NET30…). */
+  private dueFrom(issueDate?: string, terms?: string, due?: string): Date | undefined {
+    if (due) return new Date(due);
+    if (!issueDate || !terms) return undefined;
+    const m = terms.match(/(\d+)/);
+    if (!m) return undefined;
+    const d = new Date(issueDate);
+    d.setDate(d.getDate() + Number(m[1]));
+    return d;
+  }
+
   /** Global7 vê tudo; subcontratada vê só as próprias bills. */
   private scopeFor(u: AuthUser): Prisma.BillWhereInput {
     if (this.isGlobal7(u)) return {};
@@ -45,7 +56,9 @@ export class BillsService {
         currency: 'USD',
         description: dto.description,
         number: dto.number,
-        dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+        paymentTerms: dto.paymentTerms,
+        issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
+        dueDate: this.dueFrom(dto.issueDate, dto.paymentTerms, dto.dueDate),
         submittedByUserId: u.id,
         status: BillStatus.SUBMITTED,
         lines: {

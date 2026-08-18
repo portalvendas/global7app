@@ -9,7 +9,7 @@ import { isG7, useMe } from '@/lib/session';
 interface Ref { id: string; name?: string; code?: string }
 interface Line { id?: string; code?: string | null; description: string; unit?: string | null; quantity: string | number; rate: string | number; total: string | number }
 interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; paymentTerms?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
-interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; team?: Ref | null; lines?: Line[] }
+interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; issueDate?: string | null; paymentTerms?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; team?: Ref | null; lines?: Line[] }
 interface Team { id: string; name: string; subcontractorCompanyId?: string }
 interface Project { id: string; code: string }
 interface Svc { id?: string; code: string; description: string; unit?: string | null; clientValue: string | number; subValue: string | number }
@@ -56,10 +56,11 @@ export default function FinanceiroPage() {
   const [invSvc, setInvSvc] = useState<Svc[]>([]);
   const invDue = inv.issueDate && termDays(inv.paymentTerms) != null ? addDays(inv.issueDate, termDays(inv.paymentTerms) as number) : '';
 
-  const [bill, setBill] = useState({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' });
+  const [bill, setBill] = useState({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', issueDate: '', paymentTerms: '', description: '', amount: '' });
   const [billLines, setBillLines] = useState<Row[]>([emptyRow()]);
   const [billSvc, setBillSvc] = useState<Svc[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const billDue = bill.issueDate && termDays(bill.paymentTerms) != null ? addDays(bill.issueDate, termDays(bill.paymentTerms) as number) : '';
 
   const g7 = me ? isG7(me.role) : false;
   const isClient = me?.company.type === 'CLIENT';
@@ -191,7 +192,7 @@ export default function FinanceiroPage() {
         setInv((p) => ({ ...p, projectId: pid || p.projectId, issuedTo: companyByName(r.issuedTo) || p.issuedTo, billedTo: companyByName(r.billedTo) || p.billedTo, number: r.number || p.number, issueDate: r.issueDate || p.issueDate, paymentTerms: r.paymentTerms || p.paymentTerms }));
         setLines('invoice', rows);
       } else {
-        setBill((p) => ({ ...p, projectId: pid || p.projectId, number: r.number || p.number, dueDate: r.dueDate || p.dueDate }));
+        setBill((p) => ({ ...p, projectId: pid || p.projectId, number: r.number || p.number, issueDate: r.issueDate || p.issueDate, paymentTerms: r.paymentTerms || p.paymentTerms }));
         setLines('bill', rows);
       }
       setImportNote(
@@ -219,7 +220,7 @@ export default function FinanceiroPage() {
   }
 
   function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' }); setInvLines([emptyRow()]); setInvEditId(null); }
-  function resetBill() { setBill({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
+  function resetBill() { setBill({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', issueDate: '', paymentTerms: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
 
   function startEditInvoice(i: Invoice) {
     setInvEditId(i.id);
@@ -260,6 +261,8 @@ export default function FinanceiroPage() {
   async function createBill() {
     if (!bill.projectId) return setError('Vincule um projeto (obrigatório)');
     if (g7 && !bill.subcontractorCompanyId) return setError('Selecione a subcontratada');
+    if (!bill.issueDate) return setError('Informe a data do payroll');
+    if (!bill.paymentTerms) return setError('Informe os termos de pagamento');
     const lines = cleanLines(billLines);
     const amount = lines.length ? lines.reduce((s, l) => s + l.total, 0) : num(bill.amount);
     if (amount <= 0) return setError('Informe as linhas de serviço ou um valor');
@@ -267,7 +270,8 @@ export default function FinanceiroPage() {
     try {
       await api('/bills', { method: 'POST', body: {
         amount, projectId: bill.projectId, description: bill.description || undefined,
-        number: bill.number || undefined, dueDate: bill.dueDate || undefined,
+        number: bill.number || undefined,
+        issueDate: bill.issueDate, paymentTerms: bill.paymentTerms, dueDate: billDue || undefined,
         subcontractorCompanyId: g7 ? bill.subcontractorCompanyId : undefined,
         teamId: bill.teamId || undefined,
         lines: lines.length ? lines : undefined,
@@ -454,8 +458,19 @@ export default function FinanceiroPage() {
                 <input value={bill.number} onChange={(e) => setBill({ ...bill, number: e.target.value })} />
               </div>
               <div>
-                <label>Vencimento</label>
-                <input type="date" value={bill.dueDate} onChange={(e) => setBill({ ...bill, dueDate: e.target.value })} />
+                <label>Data do payroll</label>
+                <input type="date" value={bill.issueDate} onChange={(e) => setBill({ ...bill, issueDate: e.target.value })} />
+              </div>
+              <div>
+                <label>Termos de pagamento (obrigatório)</label>
+                <select value={bill.paymentTerms} onChange={(e) => setBill({ ...bill, paymentTerms: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {(bill.paymentTerms && !TERMS.includes(bill.paymentTerms) ? [bill.paymentTerms, ...TERMS] : TERMS).map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label>Vencimento (calculado)</label>
+                <input value={billDue ? dateBR(billDue) : '—'} disabled />
               </div>
               <div className="full">
                 <label>Descrição (opcional)</label>
@@ -505,7 +520,7 @@ export default function FinanceiroPage() {
                 <h3>{b.team?.name || b.subcontractor?.name || 'Subcontratada'} {b.number ? `· ${b.number}` : ''}</h3>
                 <span style={{ fontWeight: 700 }}>{money(b.amount)}</span>
               </div>
-              <div className="muted">{b.team ? `Sub: ${b.subcontractor?.name || '—'} · ` : ''}{b.description || '—'} · Projeto: {b.project?.code || '—'} · Venc.: {dateBR(b.dueDate)}</div>
+              <div className="muted">{b.team ? `Sub: ${b.subcontractor?.name || '—'} · ` : ''}{b.description || '—'} · Projeto: {b.project?.code || '—'}{b.paymentTerms ? ` · ${b.paymentTerms}` : ''} · Venc.: {dateBR(b.dueDate)}</div>
               {(b.lines?.length ?? 0) > 0 && <div className="muted" style={{ marginTop: 4 }}>{b.lines!.length} item(ns)</div>}
               <div className="row between" style={{ marginTop: 8 }}>
                 <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{b.status}</span>

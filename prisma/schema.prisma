@@ -288,6 +288,8 @@ model Bill {
   currency               String     @default("USD") @db.VarChar(3)
   status                 BillStatus @default(SUBMITTED)
   description            String?
+  paymentTerms           String?    @map("payment_terms") // NET21, NET30, etc.
+  issueDate              DateTime?  @map("issue_date")
   dueDate                DateTime?  @map("due_date")
   paidAt                 DateTime?  @map("paid_at")
 

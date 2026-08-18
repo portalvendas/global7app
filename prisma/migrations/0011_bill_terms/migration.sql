@@ -1,0 +1,2 @@
+ALTER TABLE "bills" ADD COLUMN IF NOT EXISTS "payment_terms" TEXT;
+ALTER TABLE "bills" ADD COLUMN IF NOT EXISTS "issue_date" TIMESTAMP(3);

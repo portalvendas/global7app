@@ -24,6 +24,15 @@ export class CreateBillDto {
   @IsString()
   number?: string;
 
+  // Termos de pagamento (NET7/NET21/NET30…). Vencimento = data + Nº de dias.
+  @IsOptional()
+  @IsString()
+  paymentTerms?: string;
+
+  @IsOptional()
+  @IsDateString()
+  issueDate?: string;
+
   @IsOptional()
   @IsDateString()
   dueDate?: string;
