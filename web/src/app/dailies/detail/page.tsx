@@ -10,11 +10,12 @@ interface Attachment { id: string; type: string; thumbnailUrl: string | null; up
 interface Daily {
   id: string; status: string; productionDate: string; description: string; rejectionReason?: string | null;
   gpsLat?: number | null; gpsLng?: number | null;
-  project?: { code: string; description?: string }; team?: { name: string };
+  project?: { id?: string; code: string; description?: string }; team?: { id?: string; name: string };
   author?: { id: string; name: string }; reviewedBy?: { name: string } | null;
   attachments: Attachment[];
 }
 interface Me { id: string; role: string }
+interface Opt { id: string; code?: string; name?: string }
 
 function DetailInner() {
   const id = useSearchParams().get('id') || '';
@@ -22,6 +23,11 @@ function DetailInner() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [projects, setProjects] = useState<Opt[]>([]);
+  const [teams, setTeams] = useState<Opt[]>([]);
+  const [form, setForm] = useState({ projectId: '', teamId: '', productionDate: '', description: '' });
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) { setError('Daily não informado'); return; }
@@ -29,8 +35,45 @@ function DetailInner() {
     catch (err) { setError(err instanceof Error ? err.message : 'Erro'); }
   }, [id]);
 
-  useEffect(() => { api<Me>('/users/me').then(setMe).catch(() => {}); }, []);
+  useEffect(() => {
+    api<Me>('/users/me').then(setMe).catch(() => {});
+    api<{ items: Opt[] }>('/projects?pageSize=1000').then((r) => setProjects(r.items)).catch(() => {});
+    api<{ items: Opt[] }>('/teams?pageSize=200').then((r) => setTeams(r.items)).catch(() => {});
+  }, []);
   useEffect(() => { void load(); }, [load]);
+
+  function startEdit() {
+    if (!d) return;
+    setForm({ projectId: d.project?.id || '', teamId: d.team?.id || '', productionDate: d.productionDate.slice(0, 10), description: d.description });
+    setEditing(true); setError('');
+  }
+  async function saveEdit() {
+    setBusy(true); setError('');
+    try {
+      await api(`/daily-production/${id}`, { method: 'PATCH', body: {
+        projectId: form.projectId || undefined, teamId: form.teamId || undefined,
+        productionDate: form.productionDate || undefined, description: form.description || undefined,
+      } });
+      setEditing(false); await load();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Falha ao salvar'); }
+    finally { setBusy(false); }
+  }
+  async function removeAttachment(attId: string) {
+    if (!window.confirm('Remover este anexo?')) return;
+    setBusy(true); setError('');
+    try { await api(`/daily-production/${id}/attachments/${attId}`, { method: 'DELETE' }); await load(); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Falha ao remover'); }
+    finally { setBusy(false); }
+  }
+  async function openImage(attId: string) {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/daily-production/${id}/attachments/${attId}/original`, {
+        headers: { Authorization: `Bearer ${getAccess()}` },
+      });
+      if (!res.ok) throw new Error();
+      setLightbox(URL.createObjectURL(await res.blob()));
+    } catch { setError('Não consegui abrir a imagem'); }
+  }
 
   async function act(action: 'submit' | 'approve' | 'reject') {
     let body: unknown;
@@ -74,6 +117,7 @@ function DetailInner() {
 
   const isGlobal7 = me?.role === 'GLOBAL7_ADMIN' || me?.role === 'GLOBAL7_STAFF';
   const editable = d.status === 'DRAFT' || d.status === 'REJECTED';
+  const mutable = d.status !== 'APPROVED';
 
   return (
     <>
@@ -99,7 +143,36 @@ function DetailInner() {
             <div className="error" style={{ marginTop: 10 }}>Rejeitado: {d.rejectionReason}</div>
           )}
           {d.reviewedBy && <div className="muted" style={{ marginTop: 6 }}>Revisado por {d.reviewedBy.name}</div>}
+          {mutable && !editing && (
+            <div className="row" style={{ gap: 8, marginTop: 12 }}>
+              <button className="btn small secondary" onClick={startEdit}>Editar</button>
+            </div>
+          )}
         </div>
+
+        {editing && (
+          <div className="card">
+            <h3>Editar daily</h3>
+            <label>Projeto</label>
+            <select value={form.projectId} onChange={(e) => setForm({ ...form, projectId: e.target.value })}>
+              <option value="">Selecione…</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.code}</option>)}
+            </select>
+            <label>Equipe</label>
+            <select value={form.teamId} onChange={(e) => setForm({ ...form, teamId: e.target.value })}>
+              <option value="">Selecione…</option>
+              {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <label>Data de produção</label>
+            <input type="date" value={form.productionDate} onChange={(e) => setForm({ ...form, productionDate: e.target.value })} />
+            <label>Descrição</label>
+            <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <div className="stack" style={{ marginTop: 12 }}>
+              <button className="btn" disabled={busy} onClick={saveEdit}>Salvar</button>
+              <button className="btn secondary" onClick={() => setEditing(false)}>Cancelar</button>
+            </div>
+          </div>
+        )}
 
         <div className="card">
           <div className="row between"><h3>Anexos ({d.attachments.length})</h3></div>
@@ -108,14 +181,26 @@ function DetailInner() {
           ) : (
             <div className="thumbs">
               {d.attachments.map((a) => (
-                <div className="thumb" key={a.id} style={a.type === 'REDLINE' ? { cursor: 'pointer' } : undefined} onClick={a.type === 'REDLINE' ? () => downloadOriginal(a.id) : undefined}>
-                  {a.thumbnailUrl ? <img src={a.thumbnailUrl} alt="" /> : <div className="center" style={{ fontSize: 11, padding: 6 }}>{a.type === 'REDLINE' ? '📄 baixar' : 'sem preview'}</div>}
+                <div
+                  className="thumb"
+                  key={a.id}
+                  style={{ cursor: 'pointer', position: 'relative' }}
+                  onClick={() => (a.type === 'REDLINE' ? downloadOriginal(a.id) : openImage(a.id))}
+                >
+                  {a.thumbnailUrl ? <img src={a.thumbnailUrl} alt="" /> : <div className="center" style={{ fontSize: 11, padding: 6 }}>{a.type === 'REDLINE' ? '📄 baixar' : '🔍 ver'}</div>}
                   <span className="tag">{a.type === 'MAP_PHOTO' ? 'mapa' : a.type === 'REDLINE' ? 'redline' : 'prod'}</span>
+                  {mutable && (
+                    <button
+                      title="Remover"
+                      onClick={(e) => { e.stopPropagation(); removeAttachment(a.id); }}
+                      style={{ position: 'absolute', top: 2, right: 2, width: 22, height: 22, lineHeight: '20px', padding: 0, borderRadius: 6, border: 'none', background: 'rgba(0,0,0,.6)', color: '#fff', cursor: 'pointer' }}
+                    >✕</button>
+                  )}
                 </div>
               ))}
             </div>
           )}
-          {editable && (
+          {mutable && (
             <div className="stack" style={{ marginTop: 12 }}>
               <label>Adicionar foto de produção</label>
               <input type="file" accept="image/*" capture="environment" onChange={(e) => addPhoto(e, 'PRODUCTION_PHOTO')} />
@@ -136,6 +221,14 @@ function DetailInner() {
             </>
           )}
         </div>
+
+        {lightbox && (
+          <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+            <img src={lightbox} alt="" style={{ maxWidth: '96vw', maxHeight: '90vh', objectFit: 'contain' }} />
+            <button className="btn small secondary" style={{ position: 'absolute', top: 14, right: 14 }} onClick={() => setLightbox(null)}>Fechar</button>
+            <a className="btn small" style={{ position: 'absolute', bottom: 14, right: 14 }} href={lightbox} download onClick={(e) => e.stopPropagation()}>Baixar</a>
+          </div>
+        )}
       </div>
     </>
   );

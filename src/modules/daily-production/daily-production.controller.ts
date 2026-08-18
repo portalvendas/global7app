@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -18,6 +20,7 @@ import { DailyProductionService } from './daily-production.service';
 import { CreateDailyDto } from './dto/create-daily.dto';
 import { QueryDailyDto } from './dto/query-daily.dto';
 import { RejectDailyDto } from './dto/reject-daily.dto';
+import { UpdateDailyDto } from './dto/update-daily.dto';
 import { UploadAttachmentDto } from './dto/upload-attachment.dto';
 
 const FIELD_ROLES = [
@@ -50,9 +53,25 @@ export class DailyProductionController {
   }
 
   @Roles(...FIELD_ROLES)
+  @Patch(':id')
+  update(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: UpdateDailyDto) {
+    return this.service.update(user, id, dto);
+  }
+
+  @Roles(...FIELD_ROLES)
   @Post(':id/submit')
   submit(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.submit(user, id);
+  }
+
+  @Roles(...FIELD_ROLES)
+  @Delete(':id/attachments/:attachmentId')
+  removeAttachment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('attachmentId') attachmentId: string,
+  ) {
+    return this.service.removeAttachment(user, id, attachmentId);
   }
 
   @Roles(UserRole.GLOBAL7_ADMIN, UserRole.GLOBAL7_STAFF)

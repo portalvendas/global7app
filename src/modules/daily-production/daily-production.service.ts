@@ -12,9 +12,12 @@ import { PrismaService } from '../../database/prisma.service';
 import { STORAGE_SERVICE, StorageService } from '../storage/storage.interface';
 import { CreateDailyDto } from './dto/create-daily.dto';
 import { QueryDailyDto } from './dto/query-daily.dto';
+import { UpdateDailyDto } from './dto/update-daily.dto';
 import { UploadAttachmentDto } from './dto/upload-attachment.dto';
 
 const EDITABLE: DailyStatus[] = [DailyStatus.DRAFT, DailyStatus.REJECTED];
+// Editar dados/anexos é permitido enquanto não estiver APROVADO (inclui os já enviados).
+const MUTABLE: DailyStatus[] = [DailyStatus.DRAFT, DailyStatus.REJECTED, DailyStatus.SUBMITTED];
 
 @Injectable()
 export class DailyProductionService {
@@ -88,6 +91,48 @@ export class DailyProductionService {
         status: DailyStatus.DRAFT,
       },
     });
+  }
+
+  /** Edita um daily já lançado (projeto/equipe/data/descrição). Mantém o status; bloqueia se APROVADO. */
+  async update(user: AuthUser, id: string, dto: UpdateDailyDto) {
+    const daily = await this.getScopedOrThrow(user, id);
+    await this.assertCanWriteForTeam(user, daily.teamId, daily.team.subcontractorCompanyId);
+    if (daily.status === DailyStatus.APPROVED) {
+      throw new BadRequestException('Não é possível editar um daily aprovado');
+    }
+    if (dto.teamId && dto.teamId !== daily.teamId) {
+      const team = await this.prisma.team.findUnique({ where: { id: dto.teamId } });
+      if (!team) throw new NotFoundException('Equipe não encontrada');
+      await this.assertCanWriteForTeam(user, team.id, team.subcontractorCompanyId);
+    }
+    if (dto.projectId) {
+      const project = await this.prisma.project.findUnique({ where: { id: dto.projectId } });
+      if (!project) throw new NotFoundException('Projeto não encontrado');
+    }
+    return this.prisma.dailyProduction.update({
+      where: { id },
+      data: {
+        projectId: dto.projectId ?? undefined,
+        teamId: dto.teamId ?? undefined,
+        productionDate: dto.productionDate ? new Date(dto.productionDate) : undefined,
+        description: dto.description ?? undefined,
+      },
+    });
+  }
+
+  /** Remove um anexo (só enquanto não estiver aprovado). */
+  async removeAttachment(user: AuthUser, dailyId: string, attachmentId: string) {
+    const daily = await this.getScopedOrThrow(user, dailyId);
+    await this.assertCanWriteForTeam(user, daily.teamId, daily.team.subcontractorCompanyId);
+    if (daily.status === DailyStatus.APPROVED) {
+      throw new BadRequestException('Não é possível alterar anexos de um daily aprovado');
+    }
+    const att = await this.prisma.attachment.findFirst({
+      where: { id: attachmentId, dailyProductionId: dailyId },
+    });
+    if (!att) throw new NotFoundException('Anexo não encontrado');
+    await this.prisma.attachment.delete({ where: { id: att.id } });
+    return { ok: true };
   }
 
   // ─── Transições de estado ───
@@ -197,8 +242,8 @@ export class DailyProductionService {
 
     const daily = await this.getScopedOrThrow(user, id);
     await this.assertCanWriteForTeam(user, daily.teamId, daily.team.subcontractorCompanyId);
-    if (!EDITABLE.includes(daily.status)) {
-      throw new BadRequestException('Só é possível anexar em daily DRAFT ou REJECTED');
+    if (!MUTABLE.includes(daily.status)) {
+      throw new BadRequestException('Só é possível anexar em daily não aprovado');
     }
 
     // Thumbnail leve (WebP) só p/ imagens; RedLine não-imagem fica sem preview.

@@ -65,21 +65,12 @@ function NewInner() {
     setPhotos((await db.photos.where('clientUuid').equals(cu).toArray()));
   }
 
-  function captureGps() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setError('Não consegui pegar o GPS (permissão negada?)'),
-      { enableHighAccuracy: true, timeout: 8000 },
-    );
-  }
-
   async function onFiles(e: React.ChangeEvent<HTMLInputElement>, type: QueuedPhoto['type']) {
     const files = Array.from(e.target.files || []);
     e.target.value = '';
     for (const f of files) {
       try {
-        const blob = await imageCompression(f, { maxSizeMB: 1, maxWidthOrHeight: 1600, useWebWorker: true });
+        const blob = await imageCompression(f, { maxSizeMB: 4, maxWidthOrHeight: 3000, useWebWorker: true, initialQuality: 0.92 });
         await db.photos.add({
           clientUuid, type, blob, filename: f.name || `foto-${Date.now()}.jpg`,
           gpsLat: gps?.lat, gpsLng: gps?.lng, capturedAt: new Date().toISOString(), uploaded: false,
@@ -190,13 +181,9 @@ function NewInner() {
           </label>
         </div>
 
-        {/* 3) Fotos (com geolocalização) */}
+        {/* 3) Fotos */}
         <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 0' }} />
-        <label>3. Fotos (com geolocalização)</label>
-        <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button type="button" className="btn small secondary" style={{ width: 'auto' }} onClick={captureGps}>📍 Atualizar GPS</button>
-          <span className="muted">{gps ? `📍 ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : 'GPS não capturado — toque em Atualizar GPS'}</span>
-        </div>
+        <label>3. Fotos</label>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
           <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
             📷 Câmera
@@ -207,9 +194,6 @@ function NewInner() {
             <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
           </label>
         </div>
-        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-          A localização atual é anexada a cada foto tirada. Se estiver &quot;não capturado&quot;, toque em Atualizar GPS antes de fotografar.
-        </p>
 
         {/* 4) RedLine (as-built) */}
         <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 0' }} />
