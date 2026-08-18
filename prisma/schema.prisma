@@ -51,6 +51,7 @@ enum BillStatus {
 enum AttachmentType {
   PRODUCTION_PHOTO
   MAP_PHOTO
+  REDLINE
 }
 
 enum UploadStatus {

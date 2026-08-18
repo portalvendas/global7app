@@ -91,6 +91,23 @@ function NewInner() {
     refreshPhotos(clientUuid);
   }
 
+  async function onRedline(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    for (const f of files) {
+      try {
+        // RedLine vai o arquivo original (PDF/DWG/imagem) — sem compressão.
+        await db.photos.add({
+          clientUuid, type: 'REDLINE', blob: f, filename: f.name || `redline-${Date.now()}`,
+          gpsLat: gps?.lat, gpsLng: gps?.lng, capturedAt: new Date().toISOString(), uploaded: false,
+        });
+      } catch {
+        setError('Falha ao anexar o RedLine');
+      }
+    }
+    refreshPhotos(clientUuid);
+  }
+
   async function persistDraft() {
     await db.drafts.put({
       clientUuid, projectId, teamId, productionDate: date, description,
@@ -194,12 +211,25 @@ function NewInner() {
           A localização atual é anexada a cada foto tirada. Se estiver &quot;não capturado&quot;, toque em Atualizar GPS antes de fotografar.
         </p>
 
+        {/* 4) RedLine (as-built) */}
+        <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 0' }} />
+        <label>4. RedLine (as-built) — opcional</label>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            📎 Anexar RedLine
+            <input type="file" accept=".pdf,.dwg,.dxf,.kmz,.kml,.zip,application/pdf,image/*" multiple hidden onChange={onRedline} />
+          </label>
+          <span className="muted">PDF, DWG, imagem, etc.</span>
+        </div>
+
         {photos.length > 0 && (
           <div className="thumbs">
             {photos.map((p) => (
               <div className="thumb" key={p.id}>
-                <img src={URL.createObjectURL(p.blob)} alt="" />
-                <span className="tag">{p.type === 'MAP_PHOTO' ? 'mapa' : 'prod'}</span>
+                {p.type === 'REDLINE'
+                  ? <div className="center" style={{ fontSize: 11, padding: 6, wordBreak: 'break-all' }}>📄 {p.filename.slice(0, 22)}</div>
+                  : <img src={URL.createObjectURL(p.blob)} alt="" />}
+                <span className="tag">{p.type === 'MAP_PHOTO' ? 'mapa' : p.type === 'REDLINE' ? 'redline' : 'prod'}</span>
                 {!p.uploaded && <span className="pending">pend.</span>}
               </div>
             ))}

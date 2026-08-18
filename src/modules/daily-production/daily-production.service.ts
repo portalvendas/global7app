@@ -188,25 +188,32 @@ export class DailyProductionService {
     dto: UploadAttachmentDto,
   ) {
     if (!file) throw new BadRequestException('Arquivo (campo "file") é obrigatório');
-    if (!file.mimetype?.startsWith('image/')) {
-      throw new BadRequestException('Apenas imagens são aceitas');
+    const isImage = !!file.mimetype?.startsWith('image/');
+    const isRedline = dto.type === AttachmentType.REDLINE;
+    // Fotos exigem imagem; RedLine aceita qualquer arquivo (PDF, DWG, imagem…).
+    if (!isImage && !isRedline) {
+      throw new BadRequestException('Apenas imagens são aceitas (RedLine aceita PDF/arquivo)');
     }
 
     const daily = await this.getScopedOrThrow(user, id);
     await this.assertCanWriteForTeam(user, daily.teamId, daily.team.subcontractorCompanyId);
     if (!EDITABLE.includes(daily.status)) {
-      throw new BadRequestException('Só é possível anexar fotos em daily DRAFT ou REJECTED');
+      throw new BadRequestException('Só é possível anexar em daily DRAFT ou REJECTED');
     }
 
-    // Thumbnail leve (WebP) p/ preview instantâneo — vive no Postgres.
-    const thumbnail = await sharp(file.buffer)
-      .rotate()
-      .resize(480, 480, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 70 })
-      .toBuffer();
+    // Thumbnail leve (WebP) só p/ imagens; RedLine não-imagem fica sem preview.
+    let thumbnailData: Uint8Array<ArrayBuffer> | undefined;
+    if (isImage) {
+      const thumbnail = await sharp(file.buffer)
+        .rotate()
+        .resize(480, 480, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: 70 })
+        .toBuffer();
+      thumbnailData = new Uint8Array(thumbnail);
+    }
 
     // Original vai pro storage (LocalDisk agora; Drive/R2 na fase 3).
-    const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+    const ext = (file.originalname.split('.').pop() || (isImage ? 'jpg' : 'bin')).toLowerCase();
     const saved = await this.storage.save(file.buffer, { ext, contentType: file.mimetype });
 
     const attachment = await this.prisma.attachment.create({
@@ -216,7 +223,7 @@ export class DailyProductionService {
         storageKey: saved.key,
         driveFileId: saved.driveFileId,
         driveWebViewLink: saved.webViewLink,
-        thumbnailData: new Uint8Array(thumbnail),
+        thumbnailData,
         mimeType: file.mimetype,
         sizeBytes: file.size,
         uploadStatus: 'STORED',

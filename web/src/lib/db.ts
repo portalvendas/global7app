@@ -18,8 +18,8 @@ export interface DraftDaily {
 export interface QueuedPhoto {
   id?: number;
   clientUuid: string;        // a qual daily pertence
-  type: 'PRODUCTION_PHOTO' | 'MAP_PHOTO';
-  blob: Blob;                // já comprimida
+  type: 'PRODUCTION_PHOTO' | 'MAP_PHOTO' | 'REDLINE';
+  blob: Blob;                // imagem comprimida; RedLine vai o arquivo original
   filename: string;
   gpsLat?: number;
   gpsLng?: number;

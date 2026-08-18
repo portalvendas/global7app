@@ -3,9 +3,10 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
+import { getAccess } from '@/lib/auth';
 
-interface Attachment { id: string; type: string; thumbnailUrl: string | null; uploadStatus: string }
+interface Attachment { id: string; type: string; thumbnailUrl: string | null; uploadStatus: string; mimeType?: string | null }
 interface Daily {
   id: string; status: string; productionDate: string; description: string; rejectionReason?: string | null;
   gpsLat?: number | null; gpsLng?: number | null;
@@ -58,6 +59,16 @@ function DetailInner() {
     finally { setBusy(false); }
   }
 
+  async function downloadOriginal(attId: string) {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/daily-production/${id}/attachments/${attId}/original`, {
+        headers: { Authorization: `Bearer ${getAccess()}` },
+      });
+      if (!res.ok) throw new Error();
+      window.open(URL.createObjectURL(await res.blob()), '_blank');
+    } catch { setError('Não consegui baixar o arquivo'); }
+  }
+
   if (error && !d) return <div className="container"><div className="error">{error}</div><Link href="/dailies">Voltar</Link></div>;
   if (!d) return <div className="center">Carregando…</div>;
 
@@ -91,15 +102,15 @@ function DetailInner() {
         </div>
 
         <div className="card">
-          <div className="row between"><h3>Fotos ({d.attachments.length})</h3></div>
+          <div className="row between"><h3>Anexos ({d.attachments.length})</h3></div>
           {d.attachments.length === 0 ? (
-            <div className="muted">Sem fotos.</div>
+            <div className="muted">Sem anexos.</div>
           ) : (
             <div className="thumbs">
               {d.attachments.map((a) => (
-                <div className="thumb" key={a.id}>
-                  {a.thumbnailUrl ? <img src={a.thumbnailUrl} alt="" /> : <div className="center">sem preview</div>}
-                  <span className="tag">{a.type === 'MAP_PHOTO' ? 'mapa' : 'prod'}</span>
+                <div className="thumb" key={a.id} style={a.type === 'REDLINE' ? { cursor: 'pointer' } : undefined} onClick={a.type === 'REDLINE' ? () => downloadOriginal(a.id) : undefined}>
+                  {a.thumbnailUrl ? <img src={a.thumbnailUrl} alt="" /> : <div className="center" style={{ fontSize: 11, padding: 6 }}>{a.type === 'REDLINE' ? '📄 baixar' : 'sem preview'}</div>}
+                  <span className="tag">{a.type === 'MAP_PHOTO' ? 'mapa' : a.type === 'REDLINE' ? 'redline' : 'prod'}</span>
                 </div>
               ))}
             </div>
@@ -110,6 +121,8 @@ function DetailInner() {
               <input type="file" accept="image/*" capture="environment" onChange={(e) => addPhoto(e, 'PRODUCTION_PHOTO')} />
               <label>Adicionar foto de mapa</label>
               <input type="file" accept="image/*" capture="environment" onChange={(e) => addPhoto(e, 'MAP_PHOTO')} />
+              <label>Anexar RedLine (PDF/DWG/imagem)</label>
+              <input type="file" accept=".pdf,.dwg,.dxf,.kmz,.kml,.zip,application/pdf,image/*" onChange={(e) => addPhoto(e, 'REDLINE')} />
             </div>
           )}
         </div>
