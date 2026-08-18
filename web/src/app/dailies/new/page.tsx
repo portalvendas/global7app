@@ -40,6 +40,14 @@ function NewInner() {
   useEffect(() => {
     api<{ items: Opt[] }>('/projects').then((r) => setProjects(r.items)).catch(() => {});
     api<{ items: Opt[] }>('/teams').then((r) => setTeams(r.items)).catch(() => {});
+    // Captura GPS de imediato (silenciosa) p/ as fotos já saírem geolocalizadas.
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setGps({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => {},
+        { enableHighAccuracy: true, timeout: 8000 },
+      );
+    }
   }, []);
 
   useEffect(() => {
@@ -147,27 +155,13 @@ function NewInner() {
         <label>Data de produção</label>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
 
-        <label>Descrição do serviço</label>
+        {/* 1) Descrição */}
+        <label>1. Descrição do serviço</label>
         <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="O que foi executado hoje…" />
 
-        <label>Local (GPS)</label>
-        <div className="row" style={{ gap: 8 }}>
-          <button type="button" className="btn small secondary" onClick={captureGps}>📍 Capturar GPS</button>
-          <span className="muted">{gps ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : 'não capturado'}</span>
-        </div>
-
-        <label>Fotos de produção</label>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
-            📷 Câmera
-            <input type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
-          </label>
-          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
-            🖼️ Galeria
-            <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
-          </label>
-        </div>
-        <label>Fotos de mapa</label>
+        {/* 2) Print do mapa */}
+        <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 0' }} />
+        <label>2. Print do mapa</label>
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
             📷 Câmera
@@ -178,6 +172,27 @@ function NewInner() {
             <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'MAP_PHOTO')} />
           </label>
         </div>
+
+        {/* 3) Fotos (com geolocalização) */}
+        <div style={{ borderTop: '1px solid var(--line)', margin: '16px 0 0' }} />
+        <label>3. Fotos (com geolocalização)</label>
+        <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button type="button" className="btn small secondary" style={{ width: 'auto' }} onClick={captureGps}>📍 Atualizar GPS</button>
+          <span className="muted">{gps ? `📍 ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : 'GPS não capturado — toque em Atualizar GPS'}</span>
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            📷 Câmera
+            <input type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
+          </label>
+          <label className="btn small secondary" style={{ width: 'auto', cursor: 'pointer' }}>
+            🖼️ Galeria
+            <input type="file" accept="image/*" multiple hidden onChange={(e) => onFiles(e, 'PRODUCTION_PHOTO')} />
+          </label>
+        </div>
+        <p className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          A localização atual é anexada a cada foto tirada. Se estiver &quot;não capturado&quot;, toque em Atualizar GPS antes de fotografar.
+        </p>
 
         {photos.length > 0 && (
           <div className="thumbs">
