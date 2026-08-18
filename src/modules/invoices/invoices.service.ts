@@ -54,6 +54,7 @@ export class InvoicesService {
         number: dto.number,
         issuedTo: dto.issuedTo,
         billedTo: dto.billedTo,
+        serviceType: dto.serviceType,
         paymentTerms: dto.paymentTerms,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
         dueDate: this.dueFrom(dto.issueDate, dto.paymentTerms, dto.dueDate),
@@ -106,6 +107,7 @@ export class InvoicesService {
         number: dto.number,
         issuedTo: dto.issuedTo,
         billedTo: dto.billedTo,
+        serviceType: dto.serviceType,
         paymentTerms: dto.paymentTerms,
         issueDate: dto.issueDate ? new Date(dto.issueDate) : undefined,
       };

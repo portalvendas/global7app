@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsNumber, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import { ProjectType } from '@prisma/client';
 
 export class FinanceLineDto {
   @IsOptional()
@@ -49,6 +50,11 @@ export class CreateInvoiceDto {
   @IsOptional()
   @IsString()
   billedTo?: string;
+
+  // Tipo de serviço da invoice (SPLICE / CONSTRUCTION).
+  @IsOptional()
+  @IsEnum(ProjectType)
+  serviceType?: ProjectType;
 
   // Termos de pagamento (NET21, NET30…). Obrigatório na criação.
   @IsString()

@@ -238,6 +238,7 @@ model Invoice {
   number          String?
   issuedTo        String?       @map("issued_to")
   billedTo        String?       @map("billed_to")
+  serviceType     ProjectType?  @map("service_type") // SPLICE / CONSTRUCTION
   paymentTerms    String?       @map("payment_terms") // NET21, NET30, etc.
   amount          Decimal       @db.Decimal(14, 2)
   currency        String        @default("USD") @db.VarChar(3)

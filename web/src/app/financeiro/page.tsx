@@ -8,7 +8,7 @@ import { isG7, useMe } from '@/lib/session';
 
 interface Ref { id: string; name?: string; code?: string }
 interface Line { id?: string; code?: string | null; description: string; unit?: string | null; quantity: string | number; rate: string | number; total: string | number }
-interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; paymentTerms?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
+interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; serviceType?: string | null; paymentTerms?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
 interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; issueDate?: string | null; paymentTerms?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; team?: Ref | null; lines?: Line[] }
 interface Team { id: string; name: string; subcontractorCompanyId?: string }
 interface Project { id: string; code: string }
@@ -28,6 +28,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 // Termos de pagamento e cálculo do vencimento (data da invoice + Nº de dias).
 const TERMS = ['NET7', 'NET14', 'NET15', 'NET21', 'NET30', 'NET45', 'NET60'];
+const SERVICE_TYPES = ['SPLICE', 'CONSTRUCTION'];
 const termDays = (t?: string) => { const m = (t || '').match(/(\d+)/); return m ? Number(m[1]) : null; };
 function addDays(iso: string, days: number): string {
   if (!iso) return '';
@@ -50,7 +51,7 @@ export default function FinanceiroPage() {
   const [importing, setImporting] = useState(false);
   const [importNote, setImportNote] = useState('');
 
-  const [inv, setInv] = useState({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' });
+  const [inv, setInv] = useState({ projectId: '', issuedTo: '', billedTo: '', serviceType: '', number: '', issueDate: '', paymentTerms: '', amount: '' });
   const [invEditId, setInvEditId] = useState<string | null>(null);
   const [invLines, setInvLines] = useState<Row[]>([emptyRow()]);
   const [invSvc, setInvSvc] = useState<Svc[]>([]);
@@ -276,13 +277,14 @@ export default function FinanceiroPage() {
     finally { setBusy(false); }
   }
 
-  function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' }); setInvLines([emptyRow()]); setInvEditId(null); }
+  function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', serviceType: '', number: '', issueDate: '', paymentTerms: '', amount: '' }); setInvLines([emptyRow()]); setInvEditId(null); }
   function resetBill() { setBill({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', issueDate: '', paymentTerms: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
 
   function startEditInvoice(i: Invoice) {
     setInvEditId(i.id);
     setInv({
       projectId: i.project?.id || '', issuedTo: i.issuedTo || '', billedTo: i.billedTo || '',
+      serviceType: i.serviceType || '',
       number: i.number || '', issueDate: i.issueDate ? i.issueDate.slice(0, 10) : '',
       paymentTerms: i.paymentTerms || '', amount: '',
     });
@@ -304,6 +306,7 @@ export default function FinanceiroPage() {
     const body = {
       projectId: inv.projectId, amount, number: inv.number || undefined,
       issuedTo: inv.issuedTo || undefined, billedTo: inv.billedTo || undefined,
+      serviceType: inv.serviceType || undefined,
       paymentTerms: inv.paymentTerms, issueDate: inv.issueDate, dueDate: invDue || undefined,
       lines: lines.length ? lines : undefined,
     };
@@ -447,6 +450,13 @@ export default function FinanceiroPage() {
                 </select>
               </div>
               <div>
+                <label>Tipo de serviço</label>
+                <select value={inv.serviceType} onChange={(e) => setInv({ ...inv, serviceType: e.target.value })}>
+                  <option value="">Selecione…</option>
+                  {SERVICE_TYPES.map((s) => <option key={s} value={s}>{s === 'SPLICE' ? 'SPLICE' : 'CONSTRUCTION'}</option>)}
+                </select>
+              </div>
+              <div>
                 <label>Data da invoice</label>
                 <input type="date" value={inv.issueDate} onChange={(e) => setInv({ ...inv, issueDate: e.target.value })} />
               </div>
@@ -555,7 +565,7 @@ export default function FinanceiroPage() {
                 <h3>{i.project?.code || 'Projeto'} {i.number ? `· ${i.number}` : ''}</h3>
                 <span style={{ fontWeight: 700 }}>{money(i.amount)}</span>
               </div>
-              <div className="muted">Billed to: {i.billedTo || i.client?.name || '—'}{i.paymentTerms ? ` · ${i.paymentTerms}` : ''} · Venc.: {dateBR(i.dueDate)}</div>
+              <div className="muted">Billed to: {i.billedTo || i.client?.name || '—'}{i.serviceType ? ` · ${i.serviceType}` : ''}{i.paymentTerms ? ` · ${i.paymentTerms}` : ''} · Venc.: {dateBR(i.dueDate)}</div>
               {(i.lines?.length ?? 0) > 0 && <div className="muted" style={{ marginTop: 4 }}>{i.lines!.length} item(ns)</div>}
               <div className="row between" style={{ marginTop: 8 }}>
                 <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{i.status}</span>
@@ -595,9 +605,9 @@ export default function FinanceiroPage() {
         )}
 
         {tab === 'lucro' && g7 && (
-          profit.rows.length === 0 ? <div className="center">Sem invoices/payrolls para apurar.</div> :
+          profit.rows.length === 0 ? <div className="center">Sem invoices para apurar.</div> :
           <>
-            <p className="muted" style={{ marginTop: 0 }}>Resultado = Faturado (valor cheio das Invoices) − Repasse. Repasse teórico vem da tabela de preços do projeto (valor de repasse por item); Repasse pago vem dos Payrolls lançados. Clique num projeto para ver as Invoices e Payrolls.</p>
+            <p className="muted" style={{ marginTop: 0 }}>Resultado = Faturado (valor cheio das Invoices) − Repasse (da tabela de preços do projeto, valor de repasse por item). Clique num projeto para ver as Invoices.</p>
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
@@ -607,14 +617,11 @@ export default function FinanceiroPage() {
                     <th style={{ padding: '8px 10px' }}>Repasse (tabela)</th>
                     <th style={{ padding: '8px 10px' }}>Result. (tabela)</th>
                     <th style={{ padding: '8px 10px' }}>Margem</th>
-                    <th style={{ padding: '8px 10px' }}>Repasse (pago)</th>
-                    <th style={{ padding: '8px 10px' }}>Result. (pago)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {profit.rows.map((e) => {
                     const resT = r2(e.faturado - e.repasseTeorico);
-                    const resP = r2(e.faturado - e.repassePago);
                     const marg = e.faturado ? Math.round((resT / e.faturado) * 1000) / 10 : 0;
                     const open = openProj === e.projectId;
                     return (
@@ -625,25 +632,16 @@ export default function FinanceiroPage() {
                           <td style={{ padding: '10px' }}>{money(e.repasseTeorico)}</td>
                           <td style={{ padding: '10px', color: resT >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>{money(resT)}</td>
                           <td style={{ padding: '10px', color: marg >= 0 ? '#4ade80' : '#f87171' }}>{marg}%</td>
-                          <td style={{ padding: '10px' }}>{money(e.repassePago)}</td>
-                          <td style={{ padding: '10px', color: resP >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>{money(resP)}</td>
                         </tr>
                         {open && (
                           <tr>
-                            <td colSpan={7} style={{ padding: '0 10px 12px', background: 'var(--panel2)' }}>
+                            <td colSpan={5} style={{ padding: '0 10px 12px', background: 'var(--panel2)' }}>
                               <div style={{ padding: '8px 0' }}>
                                 <div className="muted" style={{ fontWeight: 600, margin: '4px 0' }}>Invoices</div>
                                 {e.invs.length === 0 ? <div className="muted">— nenhuma —</div> : e.invs.map((iv) => (
                                   <div key={iv.id} className="row between" style={{ padding: '3px 0', fontSize: 14 }}>
                                     <span className="muted">Invoice {iv.number || iv.id.slice(-6)}{iv.miss ? ' *' : ''}</span>
                                     <span>Cheio {money(iv.cheio)} · Repasse {money(iv.repasse)} · <b style={{ color: (iv.cheio - iv.repasse) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(iv.cheio - iv.repasse))}</b></span>
-                                  </div>
-                                ))}
-                                <div className="muted" style={{ fontWeight: 600, margin: '10px 0 4px' }}>Payrolls</div>
-                                {e.bills.length === 0 ? <div className="muted">— nenhum —</div> : e.bills.map((b) => (
-                                  <div key={b.id} className="row between" style={{ padding: '3px 0', fontSize: 14 }}>
-                                    <span className="muted">{b.team?.name || b.subcontractor?.name || 'Sub'}{b.number ? ` · ${b.number}` : ''}</span>
-                                    <span>{money(b.amount)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -659,8 +657,6 @@ export default function FinanceiroPage() {
                     <td style={{ padding: '10px' }}>{money(profit.tot.repasseTeorico)}</td>
                     <td style={{ padding: '10px', color: (profit.tot.faturado - profit.tot.repasseTeorico) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(profit.tot.faturado - profit.tot.repasseTeorico))}</td>
                     <td style={{ padding: '10px' }}>{profit.tot.faturado ? Math.round(((profit.tot.faturado - profit.tot.repasseTeorico) / profit.tot.faturado) * 1000) / 10 : 0}%</td>
-                    <td style={{ padding: '10px' }}>{money(profit.tot.repassePago)}</td>
-                    <td style={{ padding: '10px', color: (profit.tot.faturado - profit.tot.repassePago) >= 0 ? '#4ade80' : '#f87171' }}>{money(r2(profit.tot.faturado - profit.tot.repassePago))}</td>
                   </tr>
                 </tbody>
               </table>
