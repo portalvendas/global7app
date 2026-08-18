@@ -8,6 +8,7 @@ import { CreateBillDto } from './dto/create-bill.dto';
 const BILL_INCLUDE = {
   subcontractor: { select: { id: true, name: true } },
   project: { select: { id: true, code: true } },
+  team: { select: { id: true, name: true } },
   lines: { orderBy: { id: 'asc' as const } },
 };
 
@@ -84,6 +85,7 @@ export class BillsService {
       include: {
         subcontractor: { select: { id: true, name: true } },
         project: { select: { id: true, code: true } },
+        team: { select: { id: true, name: true } },
         submittedBy: { select: { id: true, name: true } },
         approvedBy: { select: { id: true, name: true } },
         lines: { orderBy: { id: 'asc' } },

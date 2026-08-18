@@ -150,6 +150,7 @@ model Team {
   company     Company           @relation("SubcontractorTeams", fields: [subcontractorCompanyId], references: [id], onDelete: Cascade)
   memberships TeamMembership[]
   dailies     DailyProduction[]
+  bills       Bill[]
 
   @@index([subcontractorCompanyId])
   @@map("teams")
@@ -300,6 +301,7 @@ model Bill {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   project       Project?   @relation(fields: [projectId], references: [id])
+  team          Team?      @relation(fields: [teamId], references: [id], onDelete: SetNull)
   subcontractor Company    @relation(fields: [subcontractorCompanyId], references: [id])
   submittedBy   User?      @relation("BillSubmittedBy", fields: [submittedByUserId], references: [id])
   approvedBy    User?      @relation("BillApprovedBy", fields: [approvedByUserId], references: [id])

@@ -9,7 +9,8 @@ import { isG7, useMe } from '@/lib/session';
 interface Ref { id: string; name?: string; code?: string }
 interface Line { id?: string; code?: string | null; description: string; unit?: string | null; quantity: string | number; rate: string | number; total: string | number }
 interface Invoice { id: string; number?: string | null; amount: string | number; status: string; issueDate?: string | null; dueDate?: string | null; issuedTo?: string | null; billedTo?: string | null; paymentTerms?: string | null; project?: Ref | null; client?: Ref | null; lines?: Line[] }
-interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; lines?: Line[] }
+interface Bill { id: string; number?: string | null; amount: string | number; status: string; description?: string | null; dueDate?: string | null; project?: Ref | null; subcontractor?: Ref | null; team?: Ref | null; lines?: Line[] }
+interface Team { id: string; name: string; subcontractorCompanyId?: string }
 interface Project { id: string; code: string }
 interface Svc { id?: string; code: string; description: string; unit?: string | null; clientValue: string | number; subValue: string | number }
 interface Company { id: string; name: string; type: string }
@@ -55,9 +56,10 @@ export default function FinanceiroPage() {
   const [invSvc, setInvSvc] = useState<Svc[]>([]);
   const invDue = inv.issueDate && termDays(inv.paymentTerms) != null ? addDays(inv.issueDate, termDays(inv.paymentTerms) as number) : '';
 
-  const [bill, setBill] = useState({ subcontractorCompanyId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' });
+  const [bill, setBill] = useState({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' });
   const [billLines, setBillLines] = useState<Row[]>([emptyRow()]);
   const [billSvc, setBillSvc] = useState<Svc[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
 
   const g7 = me ? isG7(me.role) : false;
   const isClient = me?.company.type === 'CLIENT';
@@ -72,6 +74,7 @@ export default function FinanceiroPage() {
     if (isClient) setTab('receber'); else if (isSub) setTab('pagar');
     load();
     api<{ items: Project[] }>('/projects?pageSize=100').then((r) => setProjects(r.items)).catch(() => {});
+    api<{ items: Team[] }>('/teams?pageSize=200').then((r) => setTeams(r.items)).catch(() => {});
     if (g7) api<{ items: Company[] }>('/companies?pageSize=100').then((r) => setCompanies(r.items)).catch(() => {});
   }, [me, load, g7, isClient, isSub]);
 
@@ -216,7 +219,7 @@ export default function FinanceiroPage() {
   }
 
   function resetInv() { setInv({ projectId: '', issuedTo: '', billedTo: '', number: '', issueDate: '', paymentTerms: '', amount: '' }); setInvLines([emptyRow()]); setInvEditId(null); }
-  function resetBill() { setBill({ subcontractorCompanyId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
+  function resetBill() { setBill({ subcontractorCompanyId: '', teamId: '', projectId: '', number: '', dueDate: '', description: '', amount: '' }); setBillLines([emptyRow()]); }
 
   function startEditInvoice(i: Invoice) {
     setInvEditId(i.id);
@@ -266,6 +269,7 @@ export default function FinanceiroPage() {
         amount, projectId: bill.projectId, description: bill.description || undefined,
         number: bill.number || undefined, dueDate: bill.dueDate || undefined,
         subcontractorCompanyId: g7 ? bill.subcontractorCompanyId : undefined,
+        teamId: bill.teamId || undefined,
         lines: lines.length ? lines : undefined,
       } });
       setShowForm(false); resetBill(); setImportNote(''); load();
@@ -432,6 +436,13 @@ export default function FinanceiroPage() {
                 </div>
               )}
               <div>
+                <label>Equipe (opcional)</label>
+                <select value={bill.teamId} onChange={(e) => setBill({ ...bill, teamId: e.target.value })}>
+                  <option value="">— pagar à subcontratada</option>
+                  {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              <div>
                 <label>Projeto (obrigatório)</label>
                 <select value={bill.projectId} onChange={(e) => setBill({ ...bill, projectId: e.target.value })}>
                   <option value="">Selecione…</option>
@@ -491,10 +502,10 @@ export default function FinanceiroPage() {
           {bills.map((b) => (
             <div className="card" key={b.id}>
               <div className="row between">
-                <h3>{b.subcontractor?.name || 'Subcontratada'} {b.number ? `· ${b.number}` : ''}</h3>
+                <h3>{b.team?.name || b.subcontractor?.name || 'Subcontratada'} {b.number ? `· ${b.number}` : ''}</h3>
                 <span style={{ fontWeight: 700 }}>{money(b.amount)}</span>
               </div>
-              <div className="muted">{b.description || '—'} · Projeto: {b.project?.code || '—'} · Venc.: {dateBR(b.dueDate)}</div>
+              <div className="muted">{b.team ? `Sub: ${b.subcontractor?.name || '—'} · ` : ''}{b.description || '—'} · Projeto: {b.project?.code || '—'} · Venc.: {dateBR(b.dueDate)}</div>
               {(b.lines?.length ?? 0) > 0 && <div className="muted" style={{ marginTop: 4 }}>{b.lines!.length} item(ns)</div>}
               <div className="row between" style={{ marginTop: 8 }}>
                 <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{b.status}</span>
