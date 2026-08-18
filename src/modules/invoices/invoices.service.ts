@@ -163,6 +163,15 @@ export class InvoicesService {
     return this.prisma.invoice.update({ where: { id }, data: { status: InvoiceStatus.PAID, paidAt: new Date() } });
   }
 
+  /** Define o status manualmente (DRAFT/SENT/PAID). Ajusta paidAt e issueDate conforme. */
+  async setStatus(id: string, status: InvoiceStatus) {
+    const inv = await this.getOrThrow(id);
+    const data: Prisma.InvoiceUpdateInput = { status };
+    data.paidAt = status === InvoiceStatus.PAID ? new Date() : null;
+    if (status === InvoiceStatus.SENT && !inv.issueDate) data.issueDate = new Date();
+    return this.prisma.invoice.update({ where: { id }, data, include: INVOICE_INCLUDE });
+  }
+
   private async getOrThrow(id: string) {
     const inv = await this.prisma.invoice.findUnique({ where: { id } });
     if (!inv) throw new NotFoundException('Invoice não encontrada');

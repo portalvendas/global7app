@@ -29,6 +29,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 // Termos de pagamento e cálculo do vencimento (data da invoice + Nº de dias).
 const TERMS = ['NET7', 'NET14', 'NET15', 'NET21', 'NET30', 'NET45', 'NET60'];
 const SERVICE_TYPES = ['SPLICE', 'CONSTRUCTION'];
+const INV_STATUS = [{ value: 'DRAFT', label: 'Rascunho' }, { value: 'SENT', label: 'Enviada' }, { value: 'PAID', label: 'Paga' }];
 const termDays = (t?: string) => { const m = (t || '').match(/(\d+)/); return m ? Number(m[1]) : null; };
 function addDays(iso: string, days: number): string {
   if (!iso) return '';
@@ -274,6 +275,13 @@ export default function FinanceiroPage() {
     setBusy(true); setError('');
     try { await api(url, { method: 'POST' }); load(); }
     catch (err) { setError(err instanceof ApiError ? err.message : 'Falha'); }
+    finally { setBusy(false); }
+  }
+
+  async function setInvStatus(id: string, status: string) {
+    setBusy(true); setError('');
+    try { await api(`/invoices/${id}/status`, { method: 'PATCH', body: { status } }); load(); }
+    catch (err) { setError(err instanceof ApiError ? err.message : 'Falha ao alterar status'); }
     finally { setBusy(false); }
   }
 
@@ -568,7 +576,13 @@ export default function FinanceiroPage() {
               <div className="muted">Billed to: {i.billedTo || i.client?.name || '—'}{i.serviceType ? ` · ${i.serviceType}` : ''}{i.paymentTerms ? ` · ${i.paymentTerms}` : ''} · Venc.: {dateBR(i.dueDate)}</div>
               {(i.lines?.length ?? 0) > 0 && <div className="muted" style={{ marginTop: 4 }}>{i.lines!.length} item(ns)</div>}
               <div className="row between" style={{ marginTop: 8 }}>
-                <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{i.status}</span>
+                {g7 ? (
+                  <select value={i.status} disabled={busy} onChange={(e) => setInvStatus(i.id, e.target.value)} style={{ width: 'auto' }}>
+                    {(INV_STATUS.some((s) => s.value === i.status) ? INV_STATUS : [{ value: i.status, label: i.status }, ...INV_STATUS]).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="badge" style={{ background: 'var(--panel2)', color: 'var(--muted)' }}>{i.status}</span>
+                )}
                 {g7 && i.status !== 'PAID' && (
                   <div className="row" style={{ gap: 8 }}>
                     <button className="btn small secondary" onClick={() => startEditInvoice(i)}>Editar</button>

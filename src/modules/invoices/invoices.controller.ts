@@ -10,6 +10,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { PaginationDto } from '../../common/dtos/pagination.dto';
 import { DocumentParseService } from '../finance-import/document-parse.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { SetInvoiceStatusDto } from './dto/set-invoice-status.dto';
 import { UpdateInvoiceDto } from './dto/update-invoice.dto';
 import { InvoicesService } from './invoices.service';
 
@@ -53,6 +54,12 @@ export class InvoicesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateInvoiceDto) {
     return this.invoices.update(id, dto);
+  }
+
+  @Roles(...G7)
+  @Patch(':id/status')
+  setStatus(@Param('id') id: string, @Body() dto: SetInvoiceStatusDto) {
+    return this.invoices.setStatus(id, dto.status);
   }
 
   @Roles(...G7)
