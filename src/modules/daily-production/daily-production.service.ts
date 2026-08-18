@@ -19,6 +19,24 @@ const EDITABLE: DailyStatus[] = [DailyStatus.DRAFT, DailyStatus.REJECTED];
 // Editar dados/anexos é permitido enquanto não estiver APROVADO (inclui os já enviados).
 const MUTABLE: DailyStatus[] = [DailyStatus.DRAFT, DailyStatus.REJECTED, DailyStatus.SUBMITTED];
 
+// Campos do anexo p/ listagem — NUNCA inclui originalData (bytes) p/ não carregar o
+// binário inteiro em cada leitura da lista; o original é servido sob demanda.
+const ATTACHMENT_SELECT = {
+  id: true,
+  dailyProductionId: true,
+  type: true,
+  mimeType: true,
+  sizeBytes: true,
+  uploadStatus: true,
+  gpsLat: true,
+  gpsLng: true,
+  capturedAt: true,
+  createdAt: true,
+  storageKey: true,
+  driveWebViewLink: true,
+  thumbnailData: true,
+} as const;
+
 @Injectable()
 export class DailyProductionService {
   constructor(
@@ -217,7 +235,7 @@ export class DailyProductionService {
         team: { select: { id: true, name: true } },
         author: { select: { id: true, name: true } },
         reviewedBy: { select: { id: true, name: true } },
-        attachments: { orderBy: { createdAt: 'asc' } },
+        attachments: { orderBy: { createdAt: 'asc' }, select: ATTACHMENT_SELECT },
       },
     });
     if (!daily) throw new NotFoundException('Daily não encontrado');
@@ -257,18 +275,32 @@ export class DailyProductionService {
       thumbnailData = new Uint8Array(thumbnail);
     }
 
-    // Original vai pro storage (LocalDisk agora; Drive/R2 na fase 3).
-    const ext = (file.originalname.split('.').pop() || (isImage ? 'jpg' : 'bin')).toLowerCase();
-    const saved = await this.storage.save(file.buffer, { ext, contentType: file.mimetype });
+    // Imagens (fotos/mapas) vão pro storage externo (WordPress). Não-imagem (RedLine
+    // PDF/DWG/etc.) é guardado no próprio Postgres, pois o WP recusa esses tipos.
+    let storageKey: string | null = null;
+    let driveFileId: string | undefined;
+    let webViewLink: string | undefined;
+    let originalData: Uint8Array<ArrayBuffer> | undefined;
+    if (isImage) {
+      const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+      const saved = await this.storage.save(file.buffer, { ext, contentType: file.mimetype });
+      storageKey = saved.key;
+      driveFileId = saved.driveFileId;
+      webViewLink = saved.webViewLink;
+    } else {
+      originalData = new Uint8Array(file.buffer);
+      storageKey = 'db'; // sentinela: original vive no Postgres (originalData)
+    }
 
     const attachment = await this.prisma.attachment.create({
       data: {
         dailyProductionId: daily.id,
         type: dto.type as AttachmentType,
-        storageKey: saved.key,
-        driveFileId: saved.driveFileId,
-        driveWebViewLink: saved.webViewLink,
+        storageKey,
+        driveFileId,
+        driveWebViewLink: webViewLink,
         thumbnailData,
+        originalData,
         mimeType: file.mimetype,
         sizeBytes: file.size,
         uploadStatus: 'STORED',
@@ -320,8 +352,16 @@ export class DailyProductionService {
     const attachment = await this.prisma.attachment.findFirst({
       where: { id: attachmentId, dailyProductionId: dailyId },
     });
-    if (!attachment || !attachment.storageKey) {
-      throw new NotFoundException('Anexo não encontrado');
+    if (!attachment) throw new NotFoundException('Anexo não encontrado');
+    // Original no Postgres (RedLine PDF/DWG) tem prioridade; senão lê do storage externo.
+    if (attachment.originalData) {
+      return {
+        buffer: Buffer.from(attachment.originalData),
+        mimeType: attachment.mimeType || 'application/octet-stream',
+      };
+    }
+    if (!attachment.storageKey || attachment.storageKey === 'db') {
+      throw new NotFoundException('Arquivo não encontrado');
     }
     const buffer = await this.storage.read(attachment.storageKey);
     return { buffer, mimeType: attachment.mimeType || 'application/octet-stream' };

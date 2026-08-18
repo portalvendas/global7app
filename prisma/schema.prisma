@@ -379,6 +379,9 @@ model Attachment {
   // Thumbnail leve (WebP) guardado no Postgres p/ preview instantâneo no app,
   // independente de onde o original vive.
   thumbnailData   Bytes?       @map("thumbnail_data")
+  // Original guardado no Postgres p/ arquivos que o storage externo (WordPress) recusa
+  // — ex.: RedLine PDF/DWG. Fotos continuam no storage; isto é fallback self-contained.
+  originalData    Bytes?       @map("original_data")
   mimeType        String?      @map("mime_type")
   sizeBytes       Int?         @map("size_bytes")
   uploadStatus    UploadStatus @default(PENDING) @map("upload_status")

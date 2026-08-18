@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api, API_BASE } from '@/lib/api';
 import { getAccess } from '@/lib/auth';
 
@@ -18,6 +18,7 @@ interface Me { id: string; role: string }
 interface Opt { id: string; code?: string; name?: string }
 
 function DetailInner() {
+  const router = useRouter();
   const id = useSearchParams().get('id') || '';
   const [d, setD] = useState<Daily | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -195,6 +196,13 @@ function DetailInner() {
                       onClick={(e) => { e.stopPropagation(); removeAttachment(a.id); }}
                       style={{ position: 'absolute', top: 2, right: 2, width: 22, height: 22, lineHeight: '20px', padding: 0, borderRadius: 6, border: 'none', background: 'rgba(0,0,0,.6)', color: '#fff', cursor: 'pointer' }}
                     >✕</button>
+                  )}
+                  {mutable && a.type === 'REDLINE' && (a.mimeType || '').includes('pdf') && (
+                    <button
+                      title="Marcar (editar PDF)"
+                      onClick={(e) => { e.stopPropagation(); router.push(`/dailies/redline?daily=${id}&att=${a.id}`); }}
+                      style={{ position: 'absolute', bottom: 2, left: 2, padding: '2px 8px', borderRadius: 6, border: 'none', background: 'rgba(37,99,235,.9)', color: '#fff', cursor: 'pointer', fontSize: 12 }}
+                    >✏️ Marcar</button>
                   )}
                 </div>
               ))}
