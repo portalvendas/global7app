@@ -20,6 +20,7 @@ import { DailyProductionService } from './daily-production.service';
 import { CreateDailyDto } from './dto/create-daily.dto';
 import { QueryDailyDto } from './dto/query-daily.dto';
 import { RejectDailyDto } from './dto/reject-daily.dto';
+import { SetDailyStatusDto } from './dto/set-daily-status.dto';
 import { UpdateDailyDto } from './dto/update-daily.dto';
 import { UploadAttachmentDto } from './dto/upload-attachment.dto';
 
@@ -72,6 +73,12 @@ export class DailyProductionController {
     @Param('attachmentId') attachmentId: string,
   ) {
     return this.service.removeAttachment(user, id, attachmentId);
+  }
+
+  @Roles(UserRole.GLOBAL7_ADMIN, UserRole.GLOBAL7_STAFF)
+  @Patch(':id/status')
+  setStatus(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: SetDailyStatusDto) {
+    return this.service.setStatus(user, id, dto.status, dto.reason);
   }
 
   @Roles(UserRole.GLOBAL7_ADMIN, UserRole.GLOBAL7_STAFF)

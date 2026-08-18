@@ -17,6 +17,13 @@ interface Daily {
 interface Me { id: string; role: string }
 interface Opt { id: string; code?: string; name?: string }
 
+const DAILY_STATUS = [
+  { value: 'DRAFT', label: 'Rascunho' },
+  { value: 'SUBMITTED', label: 'Enviado' },
+  { value: 'APPROVED', label: 'Aprovado' },
+  { value: 'REJECTED', label: 'Rejeitado' },
+];
+
 function DetailInner() {
   const router = useRouter();
   const id = useSearchParams().get('id') || '';
@@ -76,6 +83,20 @@ function DetailInner() {
     } catch { setError('Não consegui abrir a imagem'); }
   }
 
+  async function setStatus(status: string) {
+    let reason: string | undefined;
+    if (status === 'REJECTED') {
+      reason = window.prompt('Motivo da rejeição:') || '';
+      if (!reason) return;
+    }
+    setBusy(true); setError('');
+    try {
+      await api(`/daily-production/${id}/status`, { method: 'PATCH', body: { status, reason } });
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : 'Falha ao alterar status'); }
+    finally { setBusy(false); }
+  }
+
   async function act(action: 'submit' | 'approve' | 'reject') {
     let body: unknown;
     if (action === 'reject') {
@@ -131,7 +152,13 @@ function DetailInner() {
         <div className="card">
           <div className="row between">
             <h3>{new Date(d.productionDate).toLocaleDateString('pt-BR')}</h3>
-            <span className={`badge ${d.status}`}>{d.status}</span>
+            {isGlobal7 ? (
+              <select value={d.status} disabled={busy} onChange={(e) => setStatus(e.target.value)} style={{ width: 'auto' }}>
+                {DAILY_STATUS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            ) : (
+              <span className={`badge ${d.status}`}>{d.status}</span>
+            )}
           </div>
           <div className="muted">{d.team?.name} · por {d.author?.name}</div>
           <p style={{ whiteSpace: 'pre-wrap', marginTop: 10 }}>{d.description}</p>

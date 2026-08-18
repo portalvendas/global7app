@@ -178,6 +178,22 @@ export class DailyProductionService {
     });
   }
 
+  /** Define o status diretamente (só Global 7). Ajusta revisor/rejeição conforme. */
+  async setStatus(user: AuthUser, id: string, status: DailyStatus, reason?: string) {
+    this.assertGlobal7(user);
+    await this.getScopedOrThrow(user, id);
+    const reviewed = status === DailyStatus.APPROVED || status === DailyStatus.REJECTED;
+    return this.prisma.dailyProduction.update({
+      where: { id },
+      data: {
+        status,
+        reviewedByUserId: reviewed ? user.id : null,
+        reviewedAt: reviewed ? new Date() : null,
+        rejectionReason: status === DailyStatus.REJECTED ? reason || null : null,
+      },
+    });
+  }
+
   async reject(user: AuthUser, id: string, reason: string) {
     this.assertGlobal7(user);
     const daily = await this.getScopedOrThrow(user, id);
